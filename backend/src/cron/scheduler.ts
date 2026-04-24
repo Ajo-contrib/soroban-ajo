@@ -25,18 +25,6 @@ function getAnalyticsQueue() {
 export function startScheduler(): void {
   logger.info('Starting cron scheduler...')
 
-  // Automated payout scheduling - every 15 minutes
-  scheduledTasks.push(
-    cron.schedule('*/15 * * * *', async () => {
-      logger.info('Cron: processing due payouts')
-      const { processDuePayouts } = await import('../services/payoutSchedulerService')
-      const result = await processDuePayouts()
-      if (result.scheduled > 0) {
-        logger.info('Cron: payouts scheduled', result)
-      }
-    })
-  )
-
   // Blockchain sync - every 5 minutes
   scheduledTasks.push(
     cron.schedule('*/5 * * * *', async () => {
@@ -50,22 +38,6 @@ export function startScheduler(): void {
     cron.schedule('0 8 * * *', async () => {
       logger.info('Cron: scheduling daily contribution reminders')
       await getReminderQueue().add('daily-reminders', { type: 'daily_contribution' })
-    })
-  )
-
-  // Payout upcoming reminders - every 2 hours
-  scheduledTasks.push(
-    cron.schedule('0 */2 * * *', async () => {
-      logger.info('Cron: scheduling payout upcoming reminders')
-      await getReminderQueue().add('payout-reminders', { type: 'payout_upcoming' })
-    })
-  )
-
-  // Overdue contribution reminders - every 6 hours
-  scheduledTasks.push(
-    cron.schedule('0 */6 * * *', async () => {
-      logger.info('Cron: scheduling overdue reminders')
-      await getReminderQueue().add('overdue-reminders', { type: 'overdue' })
     })
   )
 

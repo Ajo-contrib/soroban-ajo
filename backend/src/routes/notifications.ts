@@ -1,8 +1,6 @@
 import { Router, Response } from 'express'
-import { z } from 'zod'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
 import { notificationService } from '../services/notificationService'
-import { getReminderPreferences, upsertReminderPreferences } from '../services/reminderService'
 import { prisma } from '../config/database'
 import { logger } from '../utils/logger'
 import webpush from 'web-push'
@@ -86,49 +84,4 @@ notificationsRouter.get('/status', (req: AuthRequest, res: Response) => {
     success: true,
     data: { online: notificationService.isUserOnline(userId) },
   })
-})
-
-// ── Reminder preferences ──────────────────────────────────────────────────
-
-const prefsSchema = z.object({
-  channels: z.array(z.enum(['email', 'push', 'sms'])).optional(),
-  contributionReminderHours: z.number().int().min(1).max(168).optional(),
-  payoutReminderHours: z.number().int().min(1).max(48).optional(),
-  enabled: z.boolean().optional(),
-  phoneNumber: z.string().optional(),
-  email: z.string().email().optional(),
-})
-
-/**
- * GET /api/notifications/reminders/preferences
- * Returns the authenticated user's reminder preferences.
- */
-notificationsRouter.get('/reminders/preferences', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user!.walletAddress!
-    const prefs = await getReminderPreferences(userId)
-    res.json({ success: true, data: prefs })
-  } catch (err) {
-    logger.error('Error fetching reminder preferences:', err)
-    res.status(500).json({ success: false, error: 'Failed to fetch preferences' })
-  }
-})
-
-/**
- * PUT /api/notifications/reminders/preferences
- * Creates or updates the authenticated user's reminder preferences.
- */
-notificationsRouter.put('/reminders/preferences', async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user!.walletAddress!
-    const parsed = prefsSchema.parse(req.body)
-    const prefs = await upsertReminderPreferences(userId, parsed)
-    res.json({ success: true, data: prefs })
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({ success: false, error: 'Invalid preferences', details: err.errors })
-    }
-    logger.error('Error updating reminder preferences:', err)
-    res.status(500).json({ success: false, error: 'Failed to update preferences' })
-  }
 })

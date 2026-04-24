@@ -54,7 +54,6 @@ model User {
   rewards            Reward[]           @relation("UserRewards")
   fraudFlags         FraudFlag[]        @relation("UserFraudFlags")
   leaderboardEntries LeaderboardCache[] @relation("LeaderboardEntries")
-  reminderPreferences ReminderPreferences?
 
   @@index([walletAddress])
 }

@@ -2,37 +2,28 @@ import { Job } from 'bullmq'
 import { logger } from '../utils/logger'
 
 export interface ReminderJobData {
-  type:
-    | 'daily_contribution'
-    | 'payout_upcoming'
-    | 'overdue'
-    | 'weekly_summary'
-    | 'monthly_report'
+  type: 'daily_contribution' | 'weekly_summary' | 'monthly_report'
 }
 
 export async function processReminderJob(job: Job<ReminderJobData>): Promise<void> {
-  logger.info('Processing reminder job', { jobId: job.id, type: job.data.type })
+  logger.info('Processing reminder job', {
+    jobId: job.id,
+    type: job.data.type,
+  })
 
   try {
     switch (job.data.type) {
       case 'daily_contribution': {
-        const { sendContributionReminders } = await import('../services/reminderService')
-        const result = await sendContributionReminders()
-        logger.info('Contribution reminders done', { jobId: job.id, ...result })
-        break
-      }
+        const { SorobanService } = await import('../services/sorobanService')
+        const service = new SorobanService()
+        const groups = await service.getAllGroups({ page: 1, limit: 100 })
+        const activeGroups = groups.data.filter((g) => g.isActive)
 
-      case 'payout_upcoming': {
-        const { sendPayoutReminders } = await import('../services/reminderService')
-        const result = await sendPayoutReminders()
-        logger.info('Payout reminders done', { jobId: job.id, ...result })
-        break
-      }
-
-      case 'overdue': {
-        const { sendOverdueReminders } = await import('../services/reminderService')
-        const result = await sendOverdueReminders()
-        logger.info('Overdue reminders done', { jobId: job.id, ...result })
+        logger.info('Contribution reminders processed', {
+          jobId: job.id,
+          activeGroups: activeGroups.length,
+          totalMembers: activeGroups.reduce((sum, g) => sum + g.currentMembers, 0),
+        })
         break
       }
 
