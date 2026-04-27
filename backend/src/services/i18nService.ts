@@ -1,4 +1,6 @@
 import { logger } from '../utils/logger'
+import path from 'path'
+import fs from 'fs/promises'
 
 export const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', nativeName: 'English', rtl: false },
@@ -7,12 +9,15 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'sw', name: 'Swahili', nativeName: 'Kiswahili', rtl: false },
   { code: 'pt', name: 'Portuguese', nativeName: 'Português', rtl: false },
   { code: 'ar', name: 'Arabic', nativeName: 'العربية', rtl: true },
+  { code: 'zh', name: 'Chinese', nativeName: '中文', rtl: false },
 ] as const
 
 export type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number]['code']
 
 // In-memory translation cache (keyed by locale code)
 const translationCache = new Map<string, Record<string, unknown>>()
+const localeCacheTime = new Map<string, number>()
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
 export function getSupportedLanguages() {
   return SUPPORTED_LANGUAGES
@@ -22,21 +27,45 @@ export function getLanguageInfo(code: string) {
   return SUPPORTED_LANGUAGES.find(l => l.code === code) ?? null
 }
 
+export function isRTLLanguage(code: string): boolean {
+  return SUPPORTED_LANGUAGES.find(l => l.code === code)?.rtl ?? false
+}
+
+export function getLanguageDirection(code: string): 'ltr' | 'rtl' {
+  return isRTLLanguage(code) ? 'rtl' : 'ltr'
+}
+
 /**
- * Loads translations for a locale. Reads from the frontend locales directory
- * so there is a single source of truth.
+ * Loads translations for a locale from shared locales directory
  */
 export async function getTranslations(locale: string): Promise<Record<string, unknown> | null> {
   if (!SUPPORTED_LANGUAGES.find(l => l.code === locale)) return null
 
-  if (translationCache.has(locale)) return translationCache.get(locale)!
+  // Check cache and TTL
+  const cacheTime = localeCacheTime.get(locale)
+  if (translationCache.has(locale) && cacheTime && Date.now() - cacheTime < CACHE_TTL) {
+    return translationCache.get(locale)!
+  }
 
   try {
-    // Dynamic require so the path is resolved at runtime
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const messages = require(`../../../frontend/src/locales/${locale}.json`) as Record<string, unknown>
-    translationCache.set(locale, messages)
-    return messages
+    const localesDir = path.resolve(__dirname, '../../../packages/shared/locales', locale)
+    const files = await fs.readdir(localesDir)
+    const translations: Record<string, unknown> = {}
+
+    // Load all JSON files in the locale directory
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        const namespace = file.replace('.json', '')
+        const filePath = path.join(localesDir, file)
+        const content = await fs.readFile(filePath, 'utf-8')
+        const parsed = JSON.parse(content)
+        Object.assign(translations, { [namespace]: parsed[namespace] || parsed })
+      }
+    }
+
+    translationCache.set(locale, translations)
+    localeCacheTime.set(locale, Date.now())
+    return translations
   } catch (err) {
     logger.warn('Translation file not found', { locale, error: err instanceof Error ? err.message : String(err) })
     return null
@@ -86,8 +115,85 @@ export async function translateKey(locale: string, key: string): Promise<string 
   return typeof value === 'string' ? value : null
 }
 
+/**
+ * Format number for locale
+ */
+export function formatNumber(value: number, locale: string, options?: Intl.NumberFormatOptions): string {
+  const localeMap: Record<string, string> = {
+    en: 'en-US',
+    es: 'es-ES',
+    fr: 'fr-FR',
+    sw: 'sw-TZ',
+    pt: 'pt-BR',
+    ar: 'ar-SA',
+    zh: 'zh-CN',
+  }
+  return new Intl.NumberFormat(localeMap[locale] || 'en-US', options).format(value)
+}
+
+/**
+ * Format currency for locale
+ */
+export function formatCurrency(value: number, locale: string, currency: string = 'USD'): string {
+  const localeMap: Record<string, string> = {
+    en: 'en-US',
+    es: 'es-ES',
+    fr: 'fr-FR',
+    sw: 'sw-TZ',
+    pt: 'pt-BR',
+    ar: 'ar-SA',
+    zh: 'zh-CN',
+  }
+  return new Intl.NumberFormat(localeMap[locale] || 'en-US', {
+    style: 'currency',
+    currency,
+  }).format(value)
+}
+
+/**
+ * Format date for locale
+ */
+export function formatDate(date: Date | string, locale: string, options?: Intl.DateTimeFormatOptions): string {
+  const localeMap: Record<string, string> = {
+    en: 'en-US',
+    es: 'es-ES',
+    fr: 'fr-FR',
+    sw: 'sw-TZ',
+    pt: 'pt-BR',
+    ar: 'ar-SA',
+    zh: 'zh-CN',
+  }
+  const dateObj = typeof date === 'string' ? new Date(date) : date
+  return new Intl.DateTimeFormat(localeMap[locale] || 'en-US', options).format(dateObj)
+}
+
+/**
+ * Pluralize key based on count
+ */
+export async function getPluralKey(locale: string, baseKey: string, count: number): Promise<string | null> {
+  // For different languages, plural rules vary
+  const rules = {
+    en: count === 1 ? 'singular' : 'plural',
+    es: count === 1 ? 'singular' : 'plural',
+    fr: count <= 1 ? 'singular' : 'plural',
+    sw: count === 1 ? 'singular' : 'plural',
+    pt: count === 1 ? 'singular' : 'plural',
+    ar: count === 1 ? 'singular' : count === 2 ? 'dual' : 'plural',
+    zh: 'singular', // Chinese doesn't use plural forms
+  }
+
+  const pluralForm = rules[locale as LanguageCode] || 'plural'
+  const pluralKey = `${baseKey}_${pluralForm}`
+  return translateKey(locale, pluralKey)
+}
+
 /** Clears the in-memory translation cache (useful after locale file updates). */
 export function clearTranslationCache(locale?: string) {
-  if (locale) translationCache.delete(locale)
-  else translationCache.clear()
+  if (locale) {
+    translationCache.delete(locale)
+    localeCacheTime.delete(locale)
+  } else {
+    translationCache.clear()
+    localeCacheTime.clear()
+  }
 }

@@ -1,0 +1,19 @@
+{
+  "errors": {
+    "generic_error": "Kuna kosa",
+    "network_error": "Kosa la mtandao",
+    "not_found": "Haipatikani",
+    "unauthorized": "Hajaruhusiwa",
+    "forbidden": "Karimu",
+    "server_error": "Kosa la seva",
+    "validation_error": "Kosa la uthibitisho",
+    "invalid_input": "Ingizo si sahihi",
+    "required_field": "Sehemu inayohitajika",
+    "invalid_email": "Barua pepe si sahihi",
+    "invalid_phone": "Nambari ya simu si sahihi",
+    "something_went_wrong": "Kitu kimekosa",
+    "please_try_again": "Tafadhali jaribu tena",
+    "file_too_large": "Faili ni kubwa sana",
+    "unsupported_file_type": "Aina ya faili haisupportiwi"
+  }
+}

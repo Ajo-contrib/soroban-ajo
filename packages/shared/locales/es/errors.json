@@ -1,0 +1,19 @@
+{
+  "errors": {
+    "generic_error": "Ocurrió un error",
+    "network_error": "Error de red",
+    "not_found": "No encontrado",
+    "unauthorized": "No autorizado",
+    "forbidden": "Prohibido",
+    "server_error": "Error del servidor",
+    "validation_error": "Error de validación",
+    "invalid_input": "Entrada inválida",
+    "required_field": "Campo requerido",
+    "invalid_email": "Correo electrónico inválido",
+    "invalid_phone": "Número de teléfono inválido",
+    "something_went_wrong": "Algo salió mal",
+    "please_try_again": "Por favor, intenta de nuevo",
+    "file_too_large": "Archivo demasiado grande",
+    "unsupported_file_type": "Tipo de archivo no soportado"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "errors": {
+    "generic_error": "حدث خطأ",
+    "network_error": "خطأ في الشبكة",
+    "not_found": "غير موجود",
+    "unauthorized": "غير مصرح",
+    "forbidden": "ممنوع",
+    "server_error": "خطأ في الخادم",
+    "validation_error": "خطأ في التحقق",
+    "invalid_input": "إدخال غير صحيح",
+    "required_field": "حقل مطلوب",
+    "invalid_email": "عنوان بريد إلكتروني غير صحيح",
+    "invalid_phone": "رقم هاتف غير صحيح",
+    "something_went_wrong": "حدث خطأ ما",
+    "please_try_again": "يرجى المحاولة مرة أخرى",
+    "file_too_large": "الملف كبير جدا",
+    "unsupported_file_type": "نوع الملف غير مدعوم"
+  }
+}
