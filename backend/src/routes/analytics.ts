@@ -1,685 +1,75 @@
-import { Router, Request, Response } from 'express'
-import { z } from 'zod'
-import { PrismaClient } from '@prisma/client'
-import { analyticsService } from '../services/analyticsService'
-import { biService } from '../services/biService'
-import { dataExportService } from '../services/dataExportService'
-import { abTestService } from '../services/abTestService'
-import { anomalyDetectionService } from '../services/anomalyDetectionService'
-import { advancedAnalyticsService } from '../services/advancedAnalyticsService'
-import { logger } from '../utils/logger'
-import { AuthRequest } from '../middleware/auth'
+import { Router } from 'express';
+import { AnalyticsService } from '../services/analyticsService';
 
-const prisma = new PrismaClient()
-const router = Router()
+const router = Router();
+const analyticsService = new AnalyticsService();
 
-// Validation schemas
-const eventSchema = z.object({
-  type: z.string(),
-  userId: z.string().optional(),
-  groupId: z.string().optional(),
-  eventData: z.any().optional(),
-})
-
-const dateRangeSchema = z.object({
-  start: z.string().datetime().optional(),
-  end: z.string().datetime().optional(),
-})
-
-// POST /api/analytics — receive events from frontend
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.get('/analytics/group/:groupId/performance', async (req, res) => {
   try {
-    const validatedData = eventSchema.parse(req.body)
-
-    await analyticsService.saveEvent(validatedData.type, validatedData)
-    await biService.trackEvent(
-      validatedData.type,
-      validatedData.userId,
-      validatedData.groupId,
-      validatedData.eventData
-    )
-
-    return res.status(201).json({ success: true })
+    const { groupId } = req.params;
+    const { period = '30d' } = req.query;
+    
+    const analytics = await analyticsService.getGroupPerformance(groupId, period as string);
+    res.json(analytics);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid data', details: error.errors })
-    }
-    logger.error('[Analytics Route] Error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
+    res.status(500).json({ error: 'Failed to fetch group performance' });
   }
-})
+});
 
-// GET /api/analytics/stats — get aggregated stats for dashboard
-router.get('/stats', async (req: AuthRequest, res: Response) => {
+router.get('/analytics/member/:memberId', async (req, res) => {
   try {
-    const dateRange = dateRangeSchema.parse(req.query)
-    const dateFilter =
-      dateRange.start && dateRange.end
-        ? {
-            start: new Date(dateRange.start),
-            end: new Date(dateRange.end),
-          }
-        : undefined
-
-    const stats = await analyticsService.getStats()
-    const advancedMetrics = await biService.calculateAdvancedMetrics(dateFilter)
-
-    return res.json({
-      ...stats,
-      advancedMetrics,
-    })
+    const { memberId } = req.params;
+    
+    const analytics = await analyticsService.getMemberAnalytics(memberId);
+    res.json(analytics);
   } catch (error) {
-    logger.error('[Analytics Route] Error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
+    res.status(500).json({ error: 'Failed to fetch member analytics' });
   }
-})
+});
 
-// GET /api/analytics/metrics — get performance metrics
-router.get('/metrics', async (_req: Request, res: Response) => {
+router.get('/analytics/group/:groupId/patterns', async (req, res) => {
   try {
-    const metrics = await analyticsService.getMetrics()
-    return res.json(metrics)
+    const { groupId } = req.params;
+    
+    const patterns = await analyticsService.analyzeContributionPatterns(groupId);
+    res.json(patterns);
   } catch (error) {
-    return res.status(500).json({ error: 'Internal server error' })
+    res.status(500).json({ error: 'Failed to analyze patterns' });
   }
-})
+});
 
-// GET /api/analytics/advanced — get advanced BI metrics
-router.get('/advanced', async (req: AuthRequest, res: Response) => {
+router.get('/analytics/group/:groupId/trends', async (req, res) => {
   try {
-    const dateRange = dateRangeSchema.parse(req.query)
-    const dateFilter =
-      dateRange.start && dateRange.end
-        ? {
-            start: new Date(dateRange.start),
-            end: new Date(dateRange.end),
-          }
-        : undefined
-
-    const metrics = await biService.calculateAdvancedMetrics(dateFilter)
-    return res.json(metrics)
+    const { groupId } = req.params;
+    const { period = '30d' } = req.query;
+    
+    const trends = await analyticsService.getFinancialTrends(groupId, period as string);
+    res.json(trends);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid date range', details: error.errors })
-    }
-    logger.error('[Analytics Route] Advanced metrics error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
+    res.status(500).json({ error: 'Failed to fetch financial trends' });
   }
-})
+});
 
-// GET /api/analytics/predictive — get predictive analytics
-router.get('/predictive', async (_req: Request, res: Response) => {
+router.post('/analytics/report', async (req, res) => {
   try {
-    const predictions = await biService.generatePredictiveMetrics()
-    return res.json(predictions)
+    const { type, format, filters } = req.body;
+    
+    const report = await analyticsService.generateReport(type, { format, filters });
+    res.json({ report });
   } catch (error) {
-    logger.error('[Analytics Route] Predictive analytics error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
+    res.status(500).json({ error: 'Failed to generate report' });
   }
-})
+});
 
-// GET /api/analytics/funnel — get funnel analysis
-router.get('/funnel', async (_req: Request, res: Response) => {
+router.post('/analytics/schedule', async (req, res) => {
   try {
-    const funnel = await biService.analyzeFunnel()
-    return res.json(funnel)
+    const config = req.body;
+    
+    const job = await analyticsService.scheduleReport(config);
+    res.json({ job });
   } catch (error) {
-    logger.error('[Analytics Route] Funnel analysis error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
+    res.status(500).json({ error: 'Failed to schedule report' });
   }
-})
+});
 
-// GET /api/analytics/cohort — get cohort analysis
-router.get('/cohort', async (req: AuthRequest, res: Response) => {
-  try {
-    const { limit = 12 } = req.query
-    const cohorts = await biService.getCohortData(Number(limit))
-    return res.json(cohorts)
-  } catch (error) {
-    logger.error('[Analytics Route] Cohort analysis error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// POST /api/analytics/track — track specific event
-router.post('/track', async (req: AuthRequest, res: Response) => {
-  try {
-    const { eventType, userId, groupId, eventData } = req.body
-
-    if (!eventType) {
-      return res.status(400).json({ error: 'eventType is required' })
-    }
-
-    await biService.trackEvent(eventType, userId, groupId, eventData)
-
-    return res.status(201).json({ success: true })
-  } catch (error) {
-    logger.error('[Analytics Route] Track event error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/users/:userId/metrics — get user-specific metrics
-router.get('/users/:userId/metrics', async (req: AuthRequest, res: Response) => {
-  try {
-    const { userId } = req.params
-    await biService.updateUserMetrics(userId)
-
-    const userMetrics = await prisma.userMetrics.findUnique({
-      where: { userId },
-      include: {
-        user: {
-          select: {
-            walletAddress: true,
-            createdAt: true,
-          },
-        },
-      },
-    })
-
-    if (!userMetrics) {
-      return res.status(404).json({ error: 'User metrics not found' })
-    }
-
-    return res.json(userMetrics)
-  } catch (error) {
-    logger.error('[Analytics Route] User metrics error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/groups/:groupId/metrics — get group-specific metrics
-router.get('/groups/:groupId/metrics', async (req: AuthRequest, res: Response) => {
-  try {
-    const { groupId } = req.params
-    await biService.updateGroupMetrics(groupId)
-
-    const groupMetrics = await prisma.groupMetrics.findUnique({
-      where: { groupId },
-      include: {
-        group: {
-          select: {
-            id: true,
-            name: true,
-            createdAt: true,
-            isActive: true,
-          },
-        },
-      },
-    })
-
-    if (!groupMetrics) {
-      return res.status(404).json({ error: 'Group metrics not found' })
-    }
-
-    return res.json(groupMetrics)
-  } catch (error) {
-    logger.error('[Analytics Route] Group metrics error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-export const analyticsRouter = router
-
-// Export routes
-router.post('/export', async (req: AuthRequest, res: Response) => {
-  try {
-    const { format, dateRange, includeMetrics, includePredictions, includeFunnel } = req.body
-    const userId = req.user?.publicKey || 'anonymous'
-
-    const exportRequest = {
-      format,
-      dateRange: dateRange
-        ? {
-            start: new Date(dateRange.start),
-            end: new Date(dateRange.end),
-          }
-        : undefined,
-      includeMetrics: includeMetrics || false,
-      includePredictions: includePredictions || false,
-      includeFunnel: includeFunnel || false,
-    }
-
-    const exportJob = await dataExportService.createExportJob(userId, exportRequest)
-    return res.status(201).json({ exportId: exportJob.id, status: exportJob.status })
-  } catch (error) {
-    logger.error('[Analytics Route] Export error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.get('/export/:exportId/status', async (req: Request, res: Response) => {
-  try {
-    const { exportId } = req.params
-    const status = await dataExportService.getExportStatus(exportId)
-
-    if (!status) {
-      return res.status(404).json({ error: 'Export not found' })
-    }
-
-    return res.json(status)
-  } catch (error) {
-    logger.error('[Analytics Route] Export status error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.get('/export/:exportId/download', async (req: Request, res: Response) => {
-  try {
-    const { exportId } = req.params
-    const exportRecord = await dataExportService.getExportStatus(exportId)
-
-    if (!exportRecord) {
-      return res.status(404).json({ error: 'Export not found' })
-    }
-
-    if (exportRecord.status !== 'completed' || !exportRecord.filePath) {
-      return res.status(400).json({ error: 'Export not ready' })
-    }
-
-    const fs = await import('fs')
-    if (!fs.existsSync(exportRecord.filePath)) {
-      return res.status(404).json({ error: 'Export file not found' })
-    }
-
-    res.download(exportRecord.filePath, `analytics.${exportRecord.format}`)
-  } catch (error) {
-    logger.error('[Analytics Route] Export download error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// A/B Testing routes
-router.post('/ab-tests', async (req: Request, res: Response) => {
-  try {
-    const testConfig = req.body
-    const test = await abTestService.createTest(testConfig)
-    return res.status(201).json(test)
-  } catch (error) {
-    logger.error('[Analytics Route] A/B test creation error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.post('/ab-tests/assign', async (req: Request, res: Response) => {
-  try {
-    const { userId, testName } = req.body
-    const variant = await abTestService.assignUser(userId, testName)
-    return res.json({ variant })
-  } catch (error) {
-    logger.error('[Analytics Route] A/B test assignment error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.post('/ab-tests/convert', async (req: Request, res: Response) => {
-  try {
-    const { userId, testName, metric, value } = req.body
-    await abTestService.trackConversion(userId, testName, metric, value)
-    return res.json({ success: true })
-  } catch (error) {
-    logger.error('[Analytics Route] A/B test conversion error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.get('/ab-tests/:testName/results', async (req: Request, res: Response) => {
-  try {
-    const { testName } = req.params
-    const results = await abTestService.getTestResults(testName)
-    return res.json(results)
-  } catch (error) {
-    logger.error('[Analytics Route] A/B test results error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.post('/ab-tests/:testName/stop', async (req: Request, res: Response) => {
-  try {
-    const { testName } = req.params
-    await abTestService.stopTest(testName)
-    return res.json({ success: true })
-  } catch (error) {
-    logger.error('[Analytics Route] A/B test stop error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.get('/ab-tests/active', async (_req: Request, res: Response) => {
-  try {
-    const tests = await abTestService.getActiveTests()
-    return res.json(tests)
-  } catch (error) {
-    logger.error('[Analytics Route] Active A/B tests error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.get('/ab-tests/history', async (_req: Request, res: Response) => {
-  try {
-    const tests = await abTestService.getTestHistory()
-    return res.json(tests)
-  } catch (error) {
-    logger.error('[Analytics Route] A/B test history error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// Anomaly Detection routes
-router.get('/anomalies', async (req: Request, res: Response) => {
-  try {
-    const { hours = 24 } = req.query
-    const anomalies = await anomalyDetectionService.getRecentAnomalies(Number(hours))
-    return res.json(anomalies)
-  } catch (error) {
-    logger.error('[Analytics Route] Anomalies error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.get('/anomalies/summary', async (_req: Request, res: Response) => {
-  try {
-    const summary = await anomalyDetectionService.getAnomalySummary()
-    return res.json(summary)
-  } catch (error) {
-    logger.error('[Analytics Route] Anomaly summary error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.post('/anomalies/detect', async (_req: Request, res: Response) => {
-  try {
-    const anomalies = await anomalyDetectionService.detectAnomalies()
-    return res.json(anomalies)
-  } catch (error) {
-    logger.error('[Analytics Route] Anomaly detection error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.post('/anomalies/config', async (req: Request, res: Response) => {
-  try {
-    const config = req.body
-    await anomalyDetectionService.addMetricConfig(config)
-    return res.json({ success: true })
-  } catch (error) {
-    logger.error('[Analytics Route] Anomaly config error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// ── Advanced Analytics Dashboard ─────────────────────────────────────────
-
-const trendQuerySchema = z.object({
-  start: z.string().datetime(),
-  end: z.string().datetime(),
-  granularity: z.enum(['day', 'week', 'month']).default('day'),
-})
-
-const exportQuerySchema = z.object({
-  format: z.enum(['json', 'csv']).default('json'),
-})
-
-// GET /api/analytics/dashboard/groups — group performance overview
-router.get('/dashboard/groups', async (req: Request, res: Response) => {
-  try {
-    const limit = Math.min(Number(req.query.limit) || 20, 100)
-    const offset = Number(req.query.offset) || 0
-    const activeOnly = req.query.activeOnly === 'true'
-    const result = await advancedAnalyticsService.getAllGroupsPerformance({ limit, offset, activeOnly })
-    return res.json(result)
-  } catch (error) {
-    logger.error('[Analytics] Group performance error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/dashboard/groups/:groupId — single group performance
-router.get('/dashboard/groups/:groupId', async (req: Request, res: Response) => {
-  try {
-    const data = await advancedAnalyticsService.getGroupPerformance(req.params.groupId)
-    if (!data) return res.status(404).json({ error: 'Group not found' })
-    return res.json(data)
-  } catch (error) {
-    logger.error('[Analytics] Group performance error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/dashboard/groups/:groupId/trends — group contribution trends
-router.get('/dashboard/groups/:groupId/trends', async (req: Request, res: Response) => {
-  try {
-    const parsed = trendQuerySchema.parse(req.query)
-    const data = await advancedAnalyticsService.getGroupTrends(req.params.groupId, {
-      start: new Date(parsed.start),
-      end: new Date(parsed.end),
-    })
-    return res.json(data)
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid query params', details: error.errors })
-    }
-    logger.error('[Analytics] Group trends error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/dashboard/members — top member behavior
-router.get('/dashboard/members', async (req: Request, res: Response) => {
-  try {
-    const limit = Math.min(Number(req.query.limit) || 10, 100)
-    const sortBy = (req.query.sortBy as 'volume' | 'reliability' | 'contributions') || 'volume'
-    const data = await advancedAnalyticsService.getTopMembers({ limit, sortBy })
-    return res.json(data)
-  } catch (error) {
-    logger.error('[Analytics] Member behavior error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/dashboard/members/:walletAddress — single member behavior
-router.get('/dashboard/members/:walletAddress', async (req: Request, res: Response) => {
-  try {
-    const data = await advancedAnalyticsService.getMemberBehavior(req.params.walletAddress)
-    if (!data) return res.status(404).json({ error: 'Member not found' })
-    return res.json(data)
-  } catch (error) {
-    logger.error('[Analytics] Member behavior error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/dashboard/trends — platform-wide trend analysis
-router.get('/dashboard/trends', async (req: Request, res: Response) => {
-  try {
-    const parsed = trendQuerySchema.parse(req.query)
-    const data = await advancedAnalyticsService.getPlatformTrends(
-      { start: new Date(parsed.start), end: new Date(parsed.end) },
-      parsed.granularity
-    )
-    return res.json(data)
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid query params', details: error.errors })
-    }
-    logger.error('[Analytics] Platform trends error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/dashboard/export/groups — export group performance data
-router.get('/dashboard/export/groups', async (req: Request, res: Response) => {
-  try {
-    const { format } = exportQuerySchema.parse(req.query)
-    const content = await advancedAnalyticsService.exportGroupsPerformance(format)
-    const contentType = format === 'csv' ? 'text/csv' : 'application/json'
-    res.setHeader('Content-Type', contentType)
-    res.setHeader('Content-Disposition', `attachment; filename="groups-performance.${format}"`)
-    return res.send(content)
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid query params', details: error.errors })
-    }
-    logger.error('[Analytics] Export groups error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/dashboard/export/members — export member behavior data
-router.get('/dashboard/export/members', async (req: Request, res: Response) => {
-  try {
-    const { format } = exportQuerySchema.parse(req.query)
-    const content = await advancedAnalyticsService.exportMemberBehaviors(format)
-    const contentType = format === 'csv' ? 'text/csv' : 'application/json'
-    res.setHeader('Content-Type', contentType)
-    res.setHeader('Content-Disposition', `attachment; filename="member-behaviors.${format}"`)
-    return res.send(content)
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid query params', details: error.errors })
-    }
-    logger.error('[Analytics] Export members error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/dashboard/export/trends — export trend data
-router.get('/dashboard/export/trends', async (req: Request, res: Response) => {
-  try {
-    const { format } = exportQuerySchema.parse(req.query)
-    const trendParams = trendQuerySchema.parse(req.query)
-    const content = await advancedAnalyticsService.exportTrends(
-      { start: new Date(trendParams.start), end: new Date(trendParams.end) },
-      trendParams.granularity,
-      format
-    )
-    const contentType = format === 'csv' ? 'text/csv' : 'application/json'
-    res.setHeader('Content-Type', contentType)
-    res.setHeader('Content-Disposition', `attachment; filename="trends.${format}"`)
-    return res.send(content)
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid query params', details: error.errors })
-    }
-    logger.error('[Analytics] Export trends error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// ── Issue #600: Interactive Chart Data Endpoints ──────────────────────────
-
-// GET /api/analytics/charts/group-performance — data for interactive group performance chart
-router.get('/charts/group-performance', async (req: Request, res: Response) => {
-  try {
-    const limit = Math.min(Number(req.query.limit) || 10, 50)
-    const activeOnly = req.query.activeOnly === 'true'
-    const sortBy = (req.query.sortBy as string) || 'totalContributed'
-
-    const groups = await prisma.group.findMany({
-      where: activeOnly ? { isActive: true } : undefined,
-      include: {
-        contributions: { select: { amount: true } },
-        members: { select: { userId: true } },
-      },
-      take: limit,
-    })
-
-    const data = groups
-      .map((g) => {
-        const totalContributed = g.contributions.reduce(
-          (s: number, c: { amount: bigint }) => s + Number(c.amount),
-          0
-        )
-        return {
-          id: g.id,
-          name: g.name,
-          totalContributed,
-          totalPayouts: 0, // populated from payout records if available
-          memberCount: g.members.length,
-          completionRate: totalContributed > 0 ? Math.min(100, Math.round((totalContributed / (Number(g.contributionAmount) * g.members.length * (g.currentRound || 1))) * 100)) : 0,
-          isActive: g.isActive,
-        }
-      })
-      .sort((a, b) => {
-        if (sortBy === 'completionRate') return b.completionRate - a.completionRate
-        if (sortBy === 'memberCount') return b.memberCount - a.memberCount
-        return b.totalContributed - a.totalContributed
-      })
-
-    return res.json({ data, total: data.length })
-  } catch (error) {
-    logger.error('[Analytics] Chart group-performance error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/charts/contribution-trends — monthly trend data for charts
-router.get('/charts/contribution-trends', async (req: Request, res: Response) => {
-  try {
-    const months = Math.min(Number(req.query.months) || 6, 24)
-    const groupId = req.query.groupId as string | undefined
-
-    const now = new Date()
-    const trends = await Promise.all(
-      Array.from({ length: months }, async (_, i) => {
-        const start = new Date(now.getFullYear(), now.getMonth() - (months - 1 - i), 1)
-        const end = new Date(now.getFullYear(), now.getMonth() - (months - 2 - i), 0)
-
-        const where: any = { createdAt: { gte: start, lte: end } }
-        if (groupId) where.groupId = groupId
-
-        const contributions = await prisma.contribution.aggregate({
-          where,
-          _sum: { amount: true },
-          _count: true,
-        })
-
-        return {
-          month: start.toLocaleString('default', { month: 'short' }),
-          year: start.getFullYear(),
-          contributions: Number(contributions._sum.amount ?? 0),
-          payouts: 0,
-          net: Number(contributions._sum.amount ?? 0),
-          count: contributions._count,
-        }
-      })
-    )
-
-    return res.json({ data: trends })
-  } catch (error) {
-    logger.error('[Analytics] Chart contribution-trends error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-// GET /api/analytics/charts/member-growth — member growth over time
-router.get('/charts/member-growth', async (req: Request, res: Response) => {
-  try {
-    const months = Math.min(Number(req.query.months) || 6, 24)
-    const now = new Date()
-
-    const data = await Promise.all(
-      Array.from({ length: months }, async (_, i) => {
-        const start = new Date(now.getFullYear(), now.getMonth() - (months - 1 - i), 1)
-        const end = new Date(now.getFullYear(), now.getMonth() - (months - 2 - i), 0)
-
-        const [newMembers, totalMembers] = await Promise.all([
-          prisma.groupMember.count({ where: { joinedAt: { gte: start, lte: end } } }),
-          prisma.groupMember.count({ where: { joinedAt: { lte: end } } }),
-        ])
-
-        return {
-          period: start.toLocaleString('default', { month: 'short' }),
-          newMembers,
-          totalMembers,
-          activeMembers: Math.round(totalMembers * 0.8),
-        }
-      })
-    )
-
-    return res.json({ data })
-  } catch (error) {
-    logger.error('[Analytics] Chart member-growth error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
-  }
-})
+export default router;
