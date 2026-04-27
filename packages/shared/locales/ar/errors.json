@@ -1,19 +1,12 @@
 {
   "errors": {
-    "generic_error": "حدث خطأ",
-    "network_error": "خطأ في الشبكة",
-    "not_found": "غير موجود",
-    "unauthorized": "غير مصرح",
-    "forbidden": "ممنوع",
-    "server_error": "خطأ في الخادم",
-    "validation_error": "خطأ في التحقق",
-    "invalid_input": "إدخال غير صحيح",
-    "required_field": "حقل مطلوب",
-    "invalid_email": "عنوان بريد إلكتروني غير صحيح",
-    "invalid_phone": "رقم هاتف غير صحيح",
-    "something_went_wrong": "حدث خطأ ما",
-    "please_try_again": "يرجى المحاولة مرة أخرى",
-    "file_too_large": "الملف كبير جدا",
-    "unsupported_file_type": "نوع الملف غير مدعوم"
+    "error_occurred": "errors.error_occurred",
+    "try_again": "errors.try_again",
+    "not_found": "errors.not_found",
+    "unauthorized": "errors.unauthorized",
+    "forbidden": "errors.forbidden",
+    "server_error": "errors.server_error",
+    "network_error": "errors.network_error",
+    "validation_error": "errors.validation_error"
   }
 }

@@ -1,19 +1,12 @@
 {
   "errors": {
-    "generic_error": "发生错误",
-    "network_error": "网络错误",
-    "not_found": "未找到",
-    "unauthorized": "未授权",
-    "forbidden": "禁止",
-    "server_error": "服务器错误",
-    "validation_error": "验证错误",
-    "invalid_input": "无效的输入",
-    "required_field": "必填字段",
-    "invalid_email": "无效的电子邮件",
-    "invalid_phone": "无效的电话号码",
-    "something_went_wrong": "出错了",
-    "please_try_again": "请重试",
-    "file_too_large": "文件过大",
-    "unsupported_file_type": "不支持的文件类型"
+    "error_occurred": "errors.error_occurred",
+    "try_again": "errors.try_again",
+    "not_found": "errors.not_found",
+    "unauthorized": "errors.unauthorized",
+    "forbidden": "errors.forbidden",
+    "server_error": "errors.server_error",
+    "network_error": "errors.network_error",
+    "validation_error": "errors.validation_error"
   }
 }

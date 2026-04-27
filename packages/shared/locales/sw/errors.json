@@ -1,19 +1,12 @@
 {
   "errors": {
-    "generic_error": "Kuna kosa",
-    "network_error": "Kosa la mtandao",
-    "not_found": "Haipatikani",
-    "unauthorized": "Hajaruhusiwa",
-    "forbidden": "Karimu",
-    "server_error": "Kosa la seva",
-    "validation_error": "Kosa la uthibitisho",
-    "invalid_input": "Ingizo si sahihi",
-    "required_field": "Sehemu inayohitajika",
-    "invalid_email": "Barua pepe si sahihi",
-    "invalid_phone": "Nambari ya simu si sahihi",
-    "something_went_wrong": "Kitu kimekosa",
-    "please_try_again": "Tafadhali jaribu tena",
-    "file_too_large": "Faili ni kubwa sana",
-    "unsupported_file_type": "Aina ya faili haisupportiwi"
+    "error_occurred": "errors.error_occurred",
+    "try_again": "errors.try_again",
+    "not_found": "errors.not_found",
+    "unauthorized": "errors.unauthorized",
+    "forbidden": "errors.forbidden",
+    "server_error": "errors.server_error",
+    "network_error": "errors.network_error",
+    "validation_error": "errors.validation_error"
   }
 }

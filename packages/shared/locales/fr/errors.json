@@ -1,19 +1,12 @@
 {
   "errors": {
-    "generic_error": "Une erreur s'est produite",
-    "network_error": "Erreur réseau",
-    "not_found": "Non trouvé",
-    "unauthorized": "Non autorisé",
-    "forbidden": "Interdit",
-    "server_error": "Erreur serveur",
-    "validation_error": "Erreur de validation",
-    "invalid_input": "Entrée invalide",
-    "required_field": "Champ obligatoire",
-    "invalid_email": "Adresse e-mail invalide",
-    "invalid_phone": "Numéro de téléphone invalide",
-    "something_went_wrong": "Quelque chose s'est mal passé",
-    "please_try_again": "Veuillez réessayer",
-    "file_too_large": "Fichier trop volumineux",
-    "unsupported_file_type": "Type de fichier non pris en charge"
+    "error_occurred": "errors.error_occurred",
+    "try_again": "errors.try_again",
+    "not_found": "errors.not_found",
+    "unauthorized": "errors.unauthorized",
+    "forbidden": "errors.forbidden",
+    "server_error": "errors.server_error",
+    "network_error": "errors.network_error",
+    "validation_error": "errors.validation_error"
   }
 }
