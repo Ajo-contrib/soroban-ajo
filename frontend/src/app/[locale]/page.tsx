@@ -3,6 +3,7 @@ import { HeroSection } from '@/components/landing/HeroSection'
 import { FeatureGrid } from '@/components/landing/FeatureGrid'
 import { StatsSection } from '@/components/landing/StatsSection'
 import { CTASection } from '@/components/landing/CTASection'
+import { SocialProofSection } from '@/components/landing/SocialProofSection'
 
 export default function HomePage() {
   return (
@@ -10,6 +11,7 @@ export default function HomePage() {
       <HeroSection />
       <StatsSection />
       <FeatureGrid />
+      <SocialProofSection />
       <CTASection />
     </main>
   )
