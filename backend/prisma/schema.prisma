@@ -60,6 +60,8 @@ model User {
   paymentMethods PaymentMethod[]
   payments       Payment[]
   refunds        PaymentRefund[]
+  payouts        Payout[]       @relation("UserPayouts")
+  pushTokens     PushToken[]    @relation("UserPushTokens")
 
   @@index([walletAddress])
 }
@@ -919,5 +921,101 @@ model PushSubscription {
 
   user User @relation(fields: [userId], references: [walletAddress], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+/// Payout tracking for group payouts
+model Payout {
+  id              String    @id @default(cuid())
+  groupId         String
+  recipientId     String
+  amount          BigInt
+  currency        String    @default("USDC")
+  cycleNumber     Int
+  transactionHash String?
+  status          String    @default("pending") // pending, processing, completed, failed
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  recipient User @relation("UserPayouts", fields: [recipientId], references: [id])
+
+  @@index([groupId])
+  @@index([recipientId])
+  @@index([status])
+  @@index([transactionHash])
+}
+
+/// Push notification tokens for mobile/web push
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String
+  platform  String // web, ios, android
+  deviceId  String   @default("default")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation("UserPushTokens", fields: [userId], references: [walletAddress], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+}
+
+/// Payment methods for fiat gateway integration
+model PaymentMethod {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String // card, bank_account, paypal
+  provider  String // stripe, paypal
+  details   Json // encrypted payment details
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [walletAddress], onDelete: Cascade)
+  payments Payment[]
+
+  @@index([userId])
+}
+
+/// Payment transactions
+model Payment {
+  id                    String    @id @default(cuid())
+  userId                String
+  paymentMethodId       String?
+  amount                BigInt
+  currency              String    @default("USD")
+  status                String    @default("pending") // pending, processing, completed, failed, refunded
+  provider              String // stripe, paypal
+  providerTransactionId String?
+  metadata              Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user          User            @relation(fields: [userId], references: [walletAddress], onDelete: Cascade)
+  paymentMethod PaymentMethod?  @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  refunds       PaymentRefund[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+/// Payment refunds
+model PaymentRefund {
+  id               String   @id @default(cuid())
+  paymentId        String
+  userId           String
+  amount           BigInt
+  reason           String?
+  status           String   @default("pending") // pending, processing, completed, failed
+  providerRefundId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [walletAddress], onDelete: Cascade)
+
+  @@index([paymentId])
   @@index([userId])
 }

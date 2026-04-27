@@ -1,7 +1,89 @@
 import { WebSocketServer } from '../websocket/server';
+import { emailService } from './emailService';
+import { pushService } from './pushService';
+import { addNotificationJob, addBatchNotificationJobs } from '../queues/notificationQueue';
+import { logger } from '../utils/logger';
+
+export type NotificationType =
+  | 'contribution_reminder'
+  | 'contribution_received'
+  | 'payout_scheduled'
+  | 'payout_executed'
+  | 'dispute_opened'
+  | 'dispute_resolved'
+  | 'group_invitation'
+  | 'member_joined'
+  | 'cycle_completed'
+  | 'late_payment';
+
+export interface NotificationOptions {
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  data?: Record<string, any>;
+  channels?: Array<'push' | 'email' | 'sms' | 'websocket'>;
+  priority?: number;
+  delay?: number;
+}
 
 export class NotificationService {
   constructor(private wsServer: WebSocketServer) {}
+
+  /**
+   * Send notification across multiple channels
+   */
+  async send(options: NotificationOptions): Promise<void> {
+    const { userId, type, title, message, data, channels = ['push', 'websocket'], priority, delay } = options;
+
+    // Queue notification for async processing
+    await addNotificationJob(
+      {
+        userId,
+        type,
+        title,
+        message,
+        data,
+        channels,
+        priority,
+      },
+      { delay, priority }
+    );
+
+    logger.info('Notification queued', { userId, type, channels });
+  }
+
+  /**
+   * Send batch notifications
+   */
+  async sendBatch(notifications: NotificationOptions[]): Promise<void> {
+    await addBatchNotificationJobs(
+      notifications.map((n) => ({
+        data: {
+          userId: n.userId,
+          type: n.type,
+          title: n.title,
+          message: n.message,
+          data: n.data,
+          channels: n.channels,
+          priority: n.priority,
+        },
+        options: { delay: n.delay, priority: n.priority },
+      }))
+    );
+
+    logger.info('Batch notifications queued', { count: notifications.length });
+  }
+
+  /**
+   * Schedule notification for future delivery
+   */
+  async schedule(options: NotificationOptions, sendAt: Date): Promise<void> {
+    const delay = sendAt.getTime() - Date.now();
+    await this.send({ ...options, delay: Math.max(0, delay) });
+  }
+
+  // ── Legacy methods for backward compatibility ──
 
   async notifyContribution(groupId: string, contribution: any): Promise<void> {
     this.wsServer.emitToGroup(groupId, 'contribution:new', {
@@ -9,14 +91,22 @@ export class NotificationService {
       groupId,
       member: contribution.member,
       amount: contribution.amount,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
 
-    // Also notify the contributor
     this.wsServer.emitToUser(contribution.memberId, 'contribution:confirmed', {
       groupId,
       amount: contribution.amount,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+    });
+
+    await this.send({
+      userId: contribution.memberId,
+      type: 'contribution_received',
+      title: 'Contribution Confirmed',
+      message: `Your contribution of ${contribution.amount} has been received`,
+      data: { groupId, amount: contribution.amount },
+      channels: ['push', 'email'],
     });
   }
 
@@ -26,14 +116,23 @@ export class NotificationService {
       groupId,
       recipient: payout.recipient,
       amount: payout.amount,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
 
-    // Notify recipient
     this.wsServer.emitToUser(payout.recipientId, 'payout:received', {
       groupId,
       amount: payout.amount,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+    });
+
+    await this.send({
+      userId: payout.recipientId,
+      type: 'payout_executed',
+      title: 'Payout Received',
+      message: `You received a payout of ${payout.amount}`,
+      data: { groupId, amount: payout.amount },
+      channels: ['push', 'email'],
+      priority: 1,
     });
   }
 
@@ -43,7 +142,7 @@ export class NotificationService {
       groupId,
       disputeId: dispute.id,
       reason: dispute.reason,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
@@ -53,9 +152,9 @@ export class NotificationService {
       groupId,
       member: {
         id: member.id,
-        name: member.name
+        name: member.name,
       },
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
@@ -64,7 +163,7 @@ export class NotificationService {
       type: 'member_left',
       groupId,
       memberId: member.id,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
@@ -74,7 +173,7 @@ export class NotificationService {
       groupId,
       cycleNumber: cycle.number,
       totalContributions: cycle.totalContributions,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
@@ -84,7 +183,16 @@ export class NotificationService {
       message: reminder.message,
       groupId: reminder.groupId,
       dueDate: reminder.dueDate,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+    });
+
+    await this.send({
+      userId,
+      type: 'contribution_reminder',
+      title: 'Contribution Reminder',
+      message: reminder.message,
+      data: { groupId: reminder.groupId, dueDate: reminder.dueDate },
+      channels: ['push', 'email', 'sms'],
     });
   }
 
@@ -92,7 +200,8 @@ export class NotificationService {
     this.wsServer.broadcast('system:message', {
       type: 'system',
       message,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 }
+
