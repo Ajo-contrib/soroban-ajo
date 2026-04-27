@@ -1,16 +1,279 @@
 import Redis from 'ioredis'
 import { dbService } from './databaseService'
 import { SorobanService } from './sorobanService'
-import { logger } from '../utils/logger'
+import { logger, createModuleLogger } from '../utils/logger'
+import { CACHE_TTL } from '../config/cache.config'
+
+const cacheLogger = createModuleLogger('CacheService')
 
 export const redisClient = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
   lazyConnect: true,
   enableOfflineQueue: false,
+  retryStrategy: (times) => Math.min(times * 50, 2000),
+  maxRetriesPerRequest: null,
 })
 
-redisClient.on('error', (err) => logger.warn('Redis error', { error: err.message }))
+redisClient.on('error', (err) => cacheLogger.warn('Redis error', { error: err.message }))
+redisClient.on('connect', () => cacheLogger.info('Redis connected'))
+redisClient.on('ready', () => cacheLogger.info('Redis ready'))
 
 const sorobanService = new SorobanService()
+
+// ── Enhanced Cache Service Class ──────────────────────────────────────────────
+
+/**
+ * Enhanced Redis cache service with type safety, tags, and advanced features
+ */
+export class CacheService {
+  private static instance: CacheService
+  private stats = { hits: 0, misses: 0, sets: 0, deletes: 0, errors: 0 }
+  private readonly defaultTTL = 300 // 5 minutes
+
+  private constructor() {}
+
+  static getInstance(): CacheService {
+    if (!CacheService.instance) {
+      CacheService.instance = new CacheService()
+    }
+    return CacheService.instance
+  }
+
+  /**
+   * Get a value from cache with type safety
+   */
+  async get<T = any>(key: string): Promise<T | null> {
+    try {
+      const data = await redisClient.get(key)
+      if (data) {
+        this.stats.hits++
+        cacheLogger.debug('Cache hit', { key })
+        return JSON.parse(data) as T
+      }
+      this.stats.misses++
+      cacheLogger.debug('Cache miss', { key })
+      return null
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Cache get error', { key, error })
+      return null
+    }
+  }
+
+  /**
+   * Set a value in cache with optional TTL
+   */
+  async set<T = any>(key: string, value: T, ttl?: number): Promise<void> {
+    try {
+      const serialized = JSON.stringify(value)
+      const ttlSeconds = ttl || this.defaultTTL
+      await redisClient.setex(key, ttlSeconds, serialized)
+      this.stats.sets++
+      cacheLogger.debug('Cache set', { key, ttl: ttlSeconds })
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Cache set error', { key, error })
+    }
+  }
+
+  /**
+   * Delete one or multiple keys
+   */
+  async del(keys: string | string[]): Promise<number> {
+    try {
+      const keyArray = Array.isArray(keys) ? keys : [keys]
+      if (keyArray.length === 0) return 0
+      
+      const deleted = await redisClient.del(...keyArray)
+      this.stats.deletes += deleted
+      cacheLogger.debug('Cache deleted', { count: deleted })
+      return deleted
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Cache del error', { error })
+      return 0
+    }
+  }
+
+  /**
+   * Cache-aside pattern: get from cache or compute and cache
+   */
+  async remember<T = any>(
+    key: string,
+    ttl: number,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    try {
+      const cached = await this.get<T>(key)
+      if (cached !== null) {
+        return cached
+      }
+
+      const result = await fn()
+      await this.set(key, result, ttl)
+      return result
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Cache remember error', { key, error })
+      throw error
+    }
+  }
+
+  /**
+   * Invalidate all keys matching a pattern (non-blocking SCAN)
+   */
+  async invalidatePattern(pattern: string): Promise<number> {
+    try {
+      let cursor = '0'
+      let deletedCount = 0
+      const batchSize = 100
+
+      do {
+        const [newCursor, keys] = await redisClient.scan(
+          cursor,
+          'MATCH',
+          pattern,
+          'COUNT',
+          batchSize
+        )
+        cursor = newCursor
+
+        if (keys.length > 0) {
+          const deleted = await redisClient.del(...keys)
+          deletedCount += deleted
+        }
+      } while (cursor !== '0')
+
+      this.stats.deletes += deletedCount
+      cacheLogger.debug('Pattern invalidated', { pattern, count: deletedCount })
+      return deletedCount
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Pattern invalidation error', { pattern, error })
+      return 0
+    }
+  }
+
+  /**
+   * Tag-based invalidation: associate keys with tags for grouped invalidation
+   */
+  async tag(tags: string[], key: string): Promise<void> {
+    try {
+      for (const tag of tags) {
+        await redisClient.sadd(`tag:${tag}`, key)
+      }
+      cacheLogger.debug('Cache tagged', { key, tags })
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Tag error', { key, tags, error })
+    }
+  }
+
+  /**
+   * Invalidate all keys associated with a tag
+   */
+  async invalidateTag(tag: string): Promise<number> {
+    try {
+      const keys = await redisClient.smembers(`tag:${tag}`)
+      if (keys.length > 0) {
+        await redisClient.del(...keys)
+        await redisClient.del(`tag:${tag}`)
+        this.stats.deletes += keys.length
+        cacheLogger.debug('Tag invalidated', { tag, count: keys.length })
+      }
+      return keys.length
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Tag invalidation error', { tag, error })
+      return 0
+    }
+  }
+
+  /**
+   * Increment a numeric value in cache
+   */
+  async increment(key: string, amount = 1): Promise<number> {
+    try {
+      const result = await redisClient.incrby(key, amount)
+      cacheLogger.debug('Cache incremented', { key, amount, result })
+      return result
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Increment error', { key, error })
+      return 0
+    }
+  }
+
+  /**
+   * Set a value with expiration in seconds
+   */
+  async expire(key: string, seconds: number): Promise<boolean> {
+    try {
+      const result = await redisClient.expire(key, seconds)
+      return result === 1
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Expire error', { key, error })
+      return false
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getStats() {
+    const total = this.stats.hits + this.stats.misses
+    const hitRate = total > 0 ? Math.round((this.stats.hits / total) * 100) : 0
+    return { ...this.stats, hitRate, total }
+  }
+
+  /**
+   * Reset cache statistics
+   */
+  resetStats() {
+    this.stats = { hits: 0, misses: 0, sets: 0, deletes: 0, errors: 0 }
+  }
+
+  /**
+   * Get Redis server info
+   */
+  async getRedisInfo() {
+    try {
+      return await redisClient.info()
+    } catch (error) {
+      cacheLogger.error('Failed to get Redis info', { error })
+      return null
+    }
+  }
+
+  /**
+   * Flush all cache (use with caution)
+   */
+  async flush(): Promise<void> {
+    try {
+      await redisClient.flushdb()
+      this.stats.deletes++
+      cacheLogger.warn('Cache flushed')
+    } catch (error) {
+      this.stats.errors++
+      cacheLogger.error('Flush error', { error })
+    }
+  }
+
+  /**
+   * Close Redis connection
+   */
+  async disconnect(): Promise<void> {
+    try {
+      await redisClient.quit()
+      cacheLogger.info('Redis disconnected')
+    } catch (error) {
+      cacheLogger.error('Disconnect error', { error })
+    }
+  }
+}
+
+// Export singleton instance
+export const cacheService = CacheService.getInstance()
 
 // ── Key patterns ──────────────────────────────────────────────────────────────
 
@@ -21,7 +284,7 @@ export const CacheKeys = {
   groupMetrics: (id: string) => `group:metrics:${id}`,
 } as const
 
-// ── Core helpers ──────────────────────────────────────────────────────────────
+// ── Core helpers (backward compatibility) ──────────────────────────────────────
 
 export async function cacheSet(key: string, value: string, ttlSeconds = 60) {
   return redisClient.set(key, value, 'EX', ttlSeconds)
@@ -51,7 +314,7 @@ export async function invalidatePattern(pattern: string): Promise<number> {
       deleted += keys.length
     }
   } while (cursor !== '0')
-  logger.debug('Cache invalidated', { pattern, deleted })
+  cacheLogger.debug('Cache invalidated', { pattern, deleted })
   return deleted
 }
 
@@ -81,9 +344,9 @@ export async function warmCache(): Promise<{ warmed: number }> {
       })
     )
     await cacheSet(CacheKeys.allGroups(), JSON.stringify(groups), 300)
-    logger.info('Cache warmed', { warmed })
+    cacheLogger.info('Cache warmed', { warmed })
   } catch (err) {
-    logger.error('Cache warming failed', { error: err instanceof Error ? err.message : String(err) })
+    cacheLogger.error('Cache warming failed', { error: err instanceof Error ? err.message : String(err) })
   }
   return { warmed }
 }
