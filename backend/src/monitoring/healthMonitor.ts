@@ -4,6 +4,7 @@
  * fires severity-graded alerts (WARNING on slow response, CRITICAL on down),
  * and updates Prometheus gauges.
  */
+import os from 'os';
 import { HealthCheckService } from '../services/healthCheck';
 import { AlertingService, AlertSeverity } from './alerting';
 import {
@@ -46,6 +47,9 @@ const SLOW_THRESHOLDS: Record<string, number> = {
 function slowThreshold(service: string): number {
   return SLOW_THRESHOLDS[service] ?? DEFAULT_SLOW_THRESHOLD_MS;
 }
+
+const MEMORY_WARNING_PERCENT = parseInt(process.env.MEMORY_WARNING_PERCENT ?? '80', 10);
+const MEMORY_CRITICAL_PERCENT = parseInt(process.env.MEMORY_CRITICAL_PERCENT ?? '90', 10);
 
 export class HealthMonitor {
   private readonly healthCheck: HealthCheckService;
@@ -144,6 +148,22 @@ export class HealthMonitor {
           return { name, ...result, consecutiveFailures: failures };
         }),
       );
+
+      // ── Resource threshold alerts ──────────────────────────────────────────
+      const memUsedPercent = Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100);
+      if (memUsedPercent >= MEMORY_CRITICAL_PERCENT) {
+        await this.alerting.fire({
+          severity: AlertSeverity.CRITICAL,
+          service: 'system',
+          message: `Memory usage critical: ${memUsedPercent}% (threshold: ${MEMORY_CRITICAL_PERCENT}%)`,
+        });
+      } else if (memUsedPercent >= MEMORY_WARNING_PERCENT) {
+        await this.alerting.fire({
+          severity: AlertSeverity.WARNING,
+          service: 'system',
+          message: `Memory usage high: ${memUsedPercent}% (threshold: ${MEMORY_WARNING_PERCENT}%)`,
+        });
+      }
 
       const snapshot: MonitorSnapshot = {
         timestamp: health.timestamp,
