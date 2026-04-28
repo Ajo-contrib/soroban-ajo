@@ -107,6 +107,14 @@ app.use('/api/templates', templatesRouter)
 // Admin
 app.use('/api/admin', adminRouter)
 
+// Audit logs
+import { auditRouter } from './routes/audit'
+app.use('/api/audit', auditRouter)
+
+// Backups
+import { backupRouter } from './routes/backup'
+app.use('/api/backups', backupRouter)
+
 // Payments
 import { paymentsRouter } from './routes/payments'
 app.use('/api/payments', paymentsRouter)

@@ -1,6 +1,44 @@
 import { prisma } from '../config/database'
 import { logger } from '../utils/logger'
 
+// ── Security event helpers ────────────────────────────────────────────────────
+
+export type SecurityEventType =
+  | 'login_success'
+  | 'login_failure'
+  | 'logout'
+  | 'password_change'
+  | 'api_key_created'
+  | 'api_key_revoked'
+  | 'ip_blocked'
+  | 'rate_limit_exceeded'
+  | 'suspicious_activity'
+  | 'admin_action'
+
+/**
+ * Log a security-specific event. Wraps auditLog with actorType=SYSTEM and
+ * a structured metadata payload for easy querying.
+ */
+export async function logSecurityEvent(
+  event: SecurityEventType,
+  details: {
+    actorId?: string
+    ipAddress?: string
+    userAgent?: string
+    metadata?: Record<string, unknown>
+  }
+) {
+  return auditLog({
+    actorId: details.actorId ?? 'system',
+    actorType: 'SYSTEM',
+    action: event,
+    targetType: 'security',
+    ipAddress: details.ipAddress,
+    userAgent: details.userAgent,
+    metadata: { event, ...details.metadata },
+  })
+}
+
 export interface AuditLogEntry {
   actorId: string
   actorType?: 'USER' | 'ADMIN' | 'SYSTEM'

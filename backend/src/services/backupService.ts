@@ -6,6 +6,27 @@ import { logger } from '../utils/logger'
 
 const execAsync = promisify(exec)
 
+// Optional AWS SDK — only loaded when S3 env vars are present
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let S3Client: any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let PutObjectCommand: any
+
+async function loadS3() {
+  if (!process.env.AWS_S3_BUCKET) return
+  try {
+    // Dynamic import so the module is optional at runtime
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('@aws-sdk/client-s3')
+    S3Client = mod.S3Client
+    PutObjectCommand = mod.PutObjectCommand
+  } catch {
+    logger.warn('AWS SDK not available — S3 uploads disabled')
+  }
+}
+
+loadS3()
+
 export interface BackupMetadata {
   postgresVersion?: string
   startLsn?: string
@@ -187,6 +208,54 @@ export class BackupService {
       where: { backupType: 'FULL', status: { in: ['COMPLETED', 'VERIFIED'] } },
       orderBy: { completedAt: 'desc' },
     })
+  }
+
+  /**
+   * Uploads a local backup file to S3 and records the s3Key on the backup record.
+   * No-op if AWS_S3_BUCKET is not configured.
+   */
+  async uploadToS3(backupId: string, localPath: string): Promise<string | null> {
+    const bucket = process.env.AWS_S3_BUCKET
+    if (!bucket || !S3Client || !PutObjectCommand) {
+      logger.debug('S3 upload skipped — AWS_S3_BUCKET not configured')
+      return null
+    }
+
+    const s3Key = `backups/${backupId}/${localPath.split('/').pop()}`
+    const client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' })
+
+    try {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: s3Key,
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          Body: require('fs').createReadStream(localPath),
+          ServerSideEncryption: 'AES256',
+        })
+      )
+
+      await prisma.backupRecord.update({ where: { id: backupId }, data: { s3Key } })
+      logger.info('Backup uploaded to S3', { backupId, s3Key, bucket })
+      return s3Key
+    } catch (err) {
+      logger.error('S3 upload failed', { backupId, error: err instanceof Error ? err.message : String(err) })
+      return null
+    }
+  }
+
+  /**
+   * Scheduled daily backup: triggers a full backup and optionally uploads to S3.
+   * Intended to be called by the cron scheduler.
+   */
+  async runScheduledBackup(): Promise<void> {
+    logger.info('Starting scheduled daily backup')
+    try {
+      const { id } = await this.triggerFullBackup()
+      logger.info('Scheduled backup initiated', { backupId: id })
+    } catch (err) {
+      logger.error('Scheduled backup failed', { error: err instanceof Error ? err.message : String(err) })
+    }
   }
 
   /**

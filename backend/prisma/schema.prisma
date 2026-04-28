@@ -691,9 +691,10 @@ model AuditLog {
 
 model BackupRecord {
   id            String    @id @default(cuid())
-  backupType    String    // FULL, WAL
+  backupType    String    // FULL, WAL, INCREMENTAL
   status        String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED, VERIFIED
   storagePath   String
+  s3Key         String?   // S3 object key when uploaded to cloud storage
   sizeBytes     BigInt?
   checksum      String?
   encryptionKey String?   // Key ID reference (never the actual key)
@@ -706,6 +707,19 @@ model BackupRecord {
   @@index([backupType, status])
   @@index([startedAt(sort: Desc)])
   @@index([status])
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  name      String
+  keyHash   String   @unique // SHA-256 hash of the raw key
+  rateLimit Int      @default(1000) // requests per hour
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([keyHash])
+  @@index([active])
 }
 
 model EventStore {

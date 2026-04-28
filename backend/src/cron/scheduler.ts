@@ -143,6 +143,14 @@ export function startScheduler(): void {
     })
   )
 
+  // Daily database backup — 1 AM UTC
+  scheduledTasks.push(
+    cron.schedule('0 1 * * *', async () => {
+      logger.info('Cron: running scheduled daily backup')
+      await backupService.runScheduledBackup()
+    })
+  )
+
   logger.info(`Cron scheduler started with ${scheduledTasks.length} scheduled tasks`)
 }
 
