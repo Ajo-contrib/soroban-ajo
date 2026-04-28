@@ -1,5 +1,14 @@
 // Animation components
 export { Ripple } from '../components/animations/Ripple'
+export {
+  ScrollReveal,
+  GestureCard as AdvancedGestureCard,
+  LoadingPulse,
+  SuccessFlare,
+  ErrorShake,
+  StaggerGrid,
+  CountUp,
+} from '../components/animations/AdvancedAnimationSystem'
 export { GestureCard } from '../components/GestureCard'
 export {
   PageTransition,
