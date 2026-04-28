@@ -1,6 +1,7 @@
 import React from 'react'
 import { analytics } from '../services/analytics'
 import { monitoring } from '../services/monitoring'
+import * as Sentry from '@sentry/nextjs'
 
 interface ErrorBoundaryProps {
   children: React.ReactNode
@@ -80,6 +81,16 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   private sendToMonitoringService(error: Error, errorInfo: React.ErrorInfo) {
+    // Report to Sentry with component stack context
+    Sentry.withScope((scope) => {
+      scope.setExtras({
+        componentStack: errorInfo.componentStack,
+        retryCount: this.state.retryCount,
+      })
+      scope.setTag('errorBoundary', 'true')
+      Sentry.captureException(error)
+    })
+
     monitoring.captureError({
       error,
       severity: 'high',
