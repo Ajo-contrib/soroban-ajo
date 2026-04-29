@@ -25,7 +25,7 @@ mod utils;
 mod insurance;
 mod loan;
 mod emergency;
-pub mod voting;
+pub mod multisig;
 
 pub use contract::AjoContract;
 pub use contract::AjoContractClient;
