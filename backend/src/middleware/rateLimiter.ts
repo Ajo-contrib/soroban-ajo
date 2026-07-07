@@ -117,6 +117,7 @@ export const apiLimiter: RequestHandler = createIpLimiter('api');
 export const strictLimiter: RequestHandler = createIpLimiter('auth');
 export const publicReadLimiter: RequestHandler = createIpLimiter('api');
 export const analyticsLimiter: RequestHandler = createIpLimiter('api');
+export const groupsWriteLimiter: RequestHandler = createIpLimiter('expensive');
 
 /**
  * User Limiter Factory
