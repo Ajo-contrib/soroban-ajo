@@ -48,6 +48,11 @@ export const DarkColors = {
 
 export type Colors = typeof LightColors;
 
+// Static default palette for components that don't (yet) consume the
+// theme-aware colors via useTheme()/getColors(). Those should migrate to
+// `const { colors } = useTheme()` when they're made dark-mode aware.
+export const Colors: Colors = LightColors;
+
 export function getColors(theme: ThemeMode) {
   return theme === 'dark' ? DarkColors : LightColors;
 }

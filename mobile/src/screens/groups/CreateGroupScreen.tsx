@@ -112,12 +112,12 @@ export function CreateGroupScreen() {
         else if (form.name.length < 3) e.name = 'Name must be at least 3 characters';
         break;
       case 2:
-        if (!form.contributionAmount || isNaN(Number(form.contributionAmount)) {
+        if (!form.contributionAmount || isNaN(Number(form.contributionAmount))) {
           e.contributionAmount = 'Enter a valid amount';
         } else if (Number(form.contributionAmount) <= 0) {
           e.contributionAmount = 'Amount must be greater than 0';
         }
-        if (!form.maxMembers || isNaN(Number(form.maxMembers)) {
+        if (!form.maxMembers || isNaN(Number(form.maxMembers))) {
           e.maxMembers = 'Enter a valid number';
         } else if (Number(form.maxMembers) < 2) {
           e.maxMembers = 'Minimum 2 members';

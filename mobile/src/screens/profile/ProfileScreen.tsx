@@ -63,6 +63,45 @@ export function ProfileScreen() {
     ? `${session.address.slice(0, 6)}...${session.address.slice(-4)}`
     : '';
 
+  const styles = StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.surface[50] },
+    scroll: { padding: Spacing.lg, gap: Spacing.lg },
+    avatarSection: { alignItems: 'center', gap: Spacing.sm },
+    avatar: { width: 80, height: 80, borderRadius: 40 },
+    avatarPlaceholder: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarInitial: { ...Typography.h1, color: colors.white },
+    cameraIcon: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      backgroundColor: colors.surface[600],
+      borderRadius: 12,
+      padding: 4,
+    },
+    displayName: { ...Typography.h3, color: colors.surface[900] },
+    address: { ...Typography.bodySmall, color: colors.surface[500], fontFamily: 'monospace' },
+    network: {
+      ...Typography.caption,
+      color: colors.primary,
+      backgroundColor: isDark ? colors.primaryLight : '#ede9fe',
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 2,
+      borderRadius: BorderRadius.full,
+    },
+    statsCard: { gap: Spacing.md },
+    sectionTitle: { ...Typography.h3, color: colors.surface[800] },
+    statsGrid: { flexDirection: 'row', gap: Spacing.sm },
+    settingsCard: { overflow: 'hidden' },
+    logoutBtn: { width: '100%' },
+  });
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -79,7 +118,7 @@ export function ProfileScreen() {
               </View>
             )}
             <View style={styles.cameraIcon}>
-              <Ionicons name="camera" size={14} color={Colors.white} />
+              <Ionicons name="camera" size={14} color={colors.white} />
             </View>
           </TouchableOpacity>
           <Text style={styles.displayName}>
@@ -130,6 +169,7 @@ export function ProfileScreen() {
 }
 
 function StatBox({ label, value }: { label: string; value: number | string }) {
+  const { colors } = useTheme();
   return (
     <View style={statStyles.box}>
       <Text style={[statStyles.value, { color: colors.primary }]}>{value}</Text>
@@ -149,6 +189,7 @@ function SettingsRow({
   value?: string;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   return (
     <TouchableOpacity style={[rowStyles.row, { borderBottomColor: colors.surface[200] }]} onPress={onPress} accessibilityRole="button">
       <Ionicons name={icon as any} size={20} color={colors.surface[500]} />
@@ -179,43 +220,4 @@ const rowStyles = StyleSheet.create({
   label: { ...Typography.body, flex: 1 },
   right: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   value: { ...Typography.bodySmall },
-});
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface[50] },
-  scroll: { padding: Spacing.lg, gap: Spacing.lg },
-  avatarSection: { alignItems: 'center', gap: Spacing.sm },
-  avatar: { width: 80, height: 80, borderRadius: 40 },
-  avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitial: { ...Typography.h1, color: colors.white },
-  cameraIcon: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: colors.surface[600],
-    borderRadius: 12,
-    padding: 4,
-  },
-  displayName: { ...Typography.h3, color: colors.surface[900] },
-  address: { ...Typography.bodySmall, color: colors.surface[500], fontFamily: 'monospace' },
-  network: {
-    ...Typography.caption,
-    color: colors.primary,
-    backgroundColor: isDark ? colors.primaryLight : '#ede9fe',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-  },
-  statsCard: { gap: Spacing.md },
-  sectionTitle: { ...Typography.h3, color: colors.surface[800] },
-  statsGrid: { flexDirection: 'row', gap: Spacing.sm },
-  settingsCard: { overflow: 'hidden' },
-  logoutBtn: { width: '100%' },
 });

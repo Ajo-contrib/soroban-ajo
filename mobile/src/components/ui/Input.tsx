@@ -18,7 +18,7 @@ export function Input({ label, error, containerStyle, style, ...props }: InputPr
         style={[
           styles.input,
           focused && styles.inputFocused,
-          error && styles.inputError,
+          error ? styles.inputError : null,
           style,
         ]}
         onFocus={() => setFocused(true)}
