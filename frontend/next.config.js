@@ -1,6 +1,6 @@
 const withBundleAnalyzer = require('@next/bundle-analyzer')({
   enabled: process.env.ANALYZE === 'true',
-});
+})
 
 // `next-pwa` is only needed for production builds. In dev it's disabled and
 // missing devDependencies should not prevent `next dev` from starting.
@@ -157,7 +157,7 @@ const withPWA =
         },
       })
 
-const withNextIntl = require('next-intl/plugin')('./src/i18n.ts');
+const withNextIntl = require('next-intl/plugin')('./src/i18n.tsx')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

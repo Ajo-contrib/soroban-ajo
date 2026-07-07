@@ -70,14 +70,18 @@ export function isSupportedLocale(locale: string): locale is Locale {
 /**
  * Get the default request config for next-intl
  */
-export default getRequestConfig(async ({ locale }) => {
+export default getRequestConfig(async ({ requestLocale }) => {
+  const requested = await requestLocale
+
   // Validate the locale
-  if (!isSupportedLocale(locale)) {
+  if (!requested || !isSupportedLocale(requested)) {
     notFound()
   }
+  const locale = requested as Locale
 
   try {
     return {
+      locale,
       messages: (await import(`./locales/${locale}.json`)).default,
       defaultTranslationValues: {
         br: <br />,
@@ -101,4 +105,4 @@ export default getRequestConfig(async ({ locale }) => {
     console.error(`[i18n] Failed to load locale messages for ${locale}:`, error)
     notFound()
   }
-}
+})
