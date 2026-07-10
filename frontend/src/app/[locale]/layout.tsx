@@ -1,16 +1,13 @@
-import { NextIntlClientProvider } from 'next-intl';
-import { getMessages } from 'next-intl/server';
-import { notFound } from 'next/navigation';
-import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
-import '../../styles/globals.css';
-import { Providers } from '../providers';
-import { AppLayout } from '@/components/AppLayout';
-import { InstallPrompt } from '@/components/InstallPrompt';
-import { OfflineIndicator } from '@/components/OfflineIndicator';
-import { locales } from '@/i18n';
-
-const inter = Inter({ subsets: ['latin'] });
+import { NextIntlClientProvider } from 'next-intl'
+import { getMessages } from 'next-intl/server'
+import { notFound } from 'next/navigation'
+import type { Metadata, Viewport } from 'next'
+import { Providers } from '../providers'
+import { AppLayout } from '@/components/AppLayout'
+import { InstallPrompt } from '@/components/InstallPrompt'
+import { OfflineIndicator } from '@/components/OfflineIndicator'
+import { OnboardingFlow } from '@/components/onboarding'
+import { locales } from '@/i18n'
 
 export const metadata: Metadata = {
   title: 'Ajo - Decentralized Savings Groups',
@@ -54,7 +51,7 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'Ajo',
   },
-};
+}
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -65,45 +62,40 @@ export const viewport: Viewport = {
     { media: '(prefers-color-scheme: light)', color: '#3b82f6' },
     { media: '(prefers-color-scheme: dark)', color: '#1e40af' },
   ],
-};
+}
 
 export function generateStaticParams() {
-  return locales.map((locale) => ({ locale }));
+  return locales.map((locale) => ({ locale }))
 }
 
 export default async function LocaleLayout({
   children,
-  params: { locale }
+  params: { locale },
 }: {
-  children: React.ReactNode;
-  params: { locale: string };
+  children: React.ReactNode
+  params: { locale: string }
 }) {
   if (!locales.includes(locale as any)) {
-    notFound();
+    notFound()
   }
 
-  const messages = await getMessages();
+  const messages = await getMessages()
 
+  // NOTE: no <html>/<body> here — the root layout (src/app/layout.tsx) is
+  // the only place those may appear. This layout is always nested inside
+  // it (middleware redirects every request to a /[locale]/* path), so
+  // rendering a second <html>/<body> here would produce invalid nested
+  // document elements and double-mount every provider/app-shell component
+  // below (wallet connections, sidebar, etc. twice) — this previously broke
+  // the page's scroll/layout on desktop.
   return (
-    <html lang={locale}>
-      <head>
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Ajo" />
-      </head>
-      <body className={inter.className}>
-        <div className="pattern-overlay gradient-mesh min-h-screen">
-          <NextIntlClientProvider messages={messages}>
-            <Providers>
-              <AppLayout>{children}</AppLayout>
-              <InstallPrompt />
-              <OfflineIndicator />
-            </Providers>
-          </NextIntlClientProvider>
-        </div>
-      </body>
-    </html>
-  );
+    <NextIntlClientProvider messages={messages}>
+      <Providers>
+        <AppLayout>{children}</AppLayout>
+        <OnboardingFlow />
+        <InstallPrompt />
+        <OfflineIndicator />
+      </Providers>
+    </NextIntlClientProvider>
+  )
 }
