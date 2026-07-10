@@ -1,5 +1,6 @@
 import { IS_TESTNET, fundWithFriendbot, getAddFundsUrl } from '../services/soroban'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { formatRelativeTime, formatXLMCompact, truncateAddress } from '../utils/formatters'
 
 import { BalanceDisplay } from './BalanceDisplay'
@@ -42,6 +43,7 @@ export const WalletConnector: React.FC = () => {
   const [isFunding, setIsFunding] = useState(false)
   const [fundSuccess, setFundSuccess] = useState(false)
   const [showWalletSelection, setShowWalletSelection] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
   const [twoFactorCode, setTwoFactorCode] = useState('')
 
   const menuRef = useRef<HTMLDivElement>(null)
@@ -76,6 +78,11 @@ export const WalletConnector: React.FC = () => {
       },
     ]
   }, [walletDetection])
+
+  // Portal target (document.body) only exists client-side after mount
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -166,165 +173,171 @@ export const WalletConnector: React.FC = () => {
           Connect Wallet
         </button>
 
-        {/* Wallet Selection Modal */}
-        {(showWalletSelection || pendingTwoFactor) && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
-            onClick={(event) => {
-              if (event.target !== event.currentTarget) return
-              if (pendingTwoFactor) {
-                cancelTwoFactor()
-              }
-              setShowWalletSelection(false)
-            }}
-          >
-            <div className="my-auto max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-800">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                  {pendingTwoFactor ? 'Enter authentication code' : 'Select Wallet'}
-                </h3>
-                <button
-                  onClick={() => {
-                    if (pendingTwoFactor) {
-                      cancelTwoFactor()
-                    }
-                    setShowWalletSelection(false)
-                  }}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              {pendingTwoFactor ? (
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    Two-factor authentication is enabled for {pendingTwoFactor.address}. Enter the
-                    6-digit code from your authenticator app to finish signing in.
-                  </p>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={6}
-                    value={twoFactorCode}
-                    onChange={(event) =>
-                      setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))
-                    }
-                    className="w-full rounded-lg border border-gray-300 px-4 py-3 text-center text-2xl tracking-[0.4em] text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-                    placeholder="123456"
-                  />
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleTwoFactorSubmit}
-                      disabled={twoFactorCode.length !== 6}
-                      className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-blue-300"
-                    >
-                      Verify code
-                    </button>
-                    <button
-                      onClick={() => {
+        {/* Wallet Selection Modal — portaled to <body> so it isn't trapped
+            inside the desktop header's backdrop-blur containing block
+            (backdrop-filter on an ancestor makes position:fixed
+            descendants position relative to it instead of the viewport) */}
+        {isMounted &&
+          (showWalletSelection || pendingTwoFactor) &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
+              onClick={(event) => {
+                if (event.target !== event.currentTarget) return
+                if (pendingTwoFactor) {
+                  cancelTwoFactor()
+                }
+                setShowWalletSelection(false)
+              }}
+            >
+              <div className="my-auto max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                    {pendingTwoFactor ? 'Enter authentication code' : 'Select Wallet'}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      if (pendingTwoFactor) {
                         cancelTwoFactor()
-                        setShowWalletSelection(false)
-                      }}
-                      className="rounded-lg border border-gray-300 px-4 py-3 font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                      }
+                      setShowWalletSelection(false)
+                    }}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
                 </div>
-              ) : (
-                <>
-                  <div className="space-y-3">
-                    {getAvailableWallets().map((wallet) => (
-                      <button
-                        key={wallet.provider}
-                        onClick={() => handleConnect(wallet.provider)}
-                        disabled={!wallet.isInstalled}
-                        className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
-                          wallet.isInstalled
-                            ? 'border-gray-200 hover:border-blue-500 hover:bg-blue-50 dark:border-gray-700 dark:hover:border-blue-500 dark:hover:bg-blue-900/20 cursor-pointer'
-                            : 'border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 cursor-not-allowed opacity-60'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="text-2xl">{wallet.icon}</span>
-                            <div>
-                              <p className="font-semibold text-gray-900 dark:text-white">
-                                {wallet.name}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {wallet.description}
-                              </p>
-                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                                {wallet.isInstalled ? '✓ Ready to connect' : '✗ Not installed'}
-                              </p>
-                            </div>
-                          </div>
-                          {wallet.isInstalled && (
-                            <svg
-                              className="w-5 h-5 text-green-500"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
 
-                  <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <p className="text-xs text-blue-800 dark:text-blue-200">
-                      <strong>Don't have a wallet?</strong>
-                      <br />
-                      Install{' '}
-                      <a
-                        href="https://freighter.app"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline"
-                      >
-                        Freighter
-                      </a>
-                      ,{' '}
-                      <a
-                        href="https://lobstr.co"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline"
-                      >
-                        LOBSTR
-                      </a>
-                      , or{' '}
-                      <a
-                        href="https://vault.lobstr.co"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline"
-                      >
-                        Lobstr Vault
-                      </a>
+                {pendingTwoFactor ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      Two-factor authentication is enabled for {pendingTwoFactor.address}. Enter the
+                      6-digit code from your authenticator app to finish signing in.
                     </p>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      value={twoFactorCode}
+                      onChange={(event) =>
+                        setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                      }
+                      className="w-full rounded-lg border border-gray-300 px-4 py-3 text-center text-2xl tracking-[0.4em] text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                      placeholder="123456"
+                    />
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleTwoFactorSubmit}
+                        disabled={twoFactorCode.length !== 6}
+                        className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-blue-300"
+                      >
+                        Verify code
+                      </button>
+                      <button
+                        onClick={() => {
+                          cancelTwoFactor()
+                          setShowWalletSelection(false)
+                        }}
+                        className="rounded-lg border border-gray-300 px-4 py-3 font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
+                ) : (
+                  <>
+                    <div className="space-y-3">
+                      {getAvailableWallets().map((wallet) => (
+                        <button
+                          key={wallet.provider}
+                          onClick={() => handleConnect(wallet.provider)}
+                          disabled={!wallet.isInstalled}
+                          className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
+                            wallet.isInstalled
+                              ? 'border-gray-200 hover:border-blue-500 hover:bg-blue-50 dark:border-gray-700 dark:hover:border-blue-500 dark:hover:bg-blue-900/20 cursor-pointer'
+                              : 'border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 cursor-not-allowed opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">{wallet.icon}</span>
+                              <div>
+                                <p className="font-semibold text-gray-900 dark:text-white">
+                                  {wallet.name}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  {wallet.description}
+                                </p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                  {wallet.isInstalled ? '✓ Ready to connect' : '✗ Not installed'}
+                                </p>
+                              </div>
+                            </div>
+                            {wallet.isInstalled && (
+                              <svg
+                                className="w-5 h-5 text-green-500"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      <p className="text-xs text-blue-800 dark:text-blue-200">
+                        <strong>Don't have a wallet?</strong>
+                        <br />
+                        Install{' '}
+                        <a
+                          href="https://freighter.app"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          Freighter
+                        </a>
+                        ,{' '}
+                        <a
+                          href="https://lobstr.co"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          LOBSTR
+                        </a>
+                        , or{' '}
+                        <a
+                          href="https://vault.lobstr.co"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          Lobstr Vault
+                        </a>
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>,
+            document.body
+          )}
 
         {connectError && (
           <div className="absolute top-full mt-2 right-0 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm max-w-xs z-50">
