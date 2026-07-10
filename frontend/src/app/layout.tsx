@@ -1,12 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import Script from 'next/script'
+import { getLocale } from 'next-intl/server'
 import '../styles/globals.css'
-import { Providers } from './providers'
-import { AppLayout } from '@/components/AppLayout'
-import { InstallPrompt } from '@/components/InstallPrompt'
-import { OfflineIndicator } from '@/components/OfflineIndicator'
-import { OnboardingFlow } from '@/components/onboarding'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -67,9 +63,17 @@ export const viewport: Viewport = {
   ],
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // This is the only layout allowed to render <html>/<body> — every real
+  // request is redirected by middleware to a /[locale]/* path, and
+  // src/app/[locale]/layout.tsx (nested inside this one) owns the actual
+  // app shell (providers, sidebar/nav, etc.). Duplicating <html>/<body> or
+  // the app shell here previously double-mounted everything and broke
+  // desktop scrolling.
+  const locale = await getLocale()
+
   return (
-    <html lang="en">
+    <html lang={locale}>
       <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -107,14 +111,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             `}</Script>
           </>
         )}
-        <div className="pattern-overlay gradient-mesh min-h-screen">
-          <Providers>
-            <AppLayout>{children}</AppLayout>
-            <OnboardingFlow />
-            <InstallPrompt />
-            <OfflineIndicator />
-          </Providers>
-        </div>
+        <div className="pattern-overlay gradient-mesh min-h-screen">{children}</div>
       </body>
     </html>
   )
