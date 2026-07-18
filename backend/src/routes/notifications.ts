@@ -80,11 +80,11 @@ notificationsRouter.post('/test', async (req: AuthRequest, res: Response) => {
  * GET /api/notifications/status
  * Returns whether the authenticated user is currently connected via WebSocket.
  */
-notificationsRouter.get('/status', (req: AuthRequest, res: Response) => {
+notificationsRouter.get('/status', async (req: AuthRequest, res: Response) => {
   const userId = req.user!.walletAddress!
   res.json({
     success: true,
-    data: { online: notificationService.isUserOnline(userId) },
+    data: { online: await notificationService.isUserOnline(userId) },
   })
 })
 

@@ -1,7 +1,10 @@
 import { Server as HTTPServer } from 'http'
 import { Server as SocketIOServer, Socket } from 'socket.io'
+import { createAdapter } from '@socket.io/redis-adapter'
+import Redis from 'ioredis'
 import { prisma } from '../config/database'
 import { logger } from '../utils/logger'
+import { presenceService } from './realtimePresence'
 
 interface SocketData {
   userId: string
@@ -10,13 +13,19 @@ interface SocketData {
 
 class ChatService {
   private io: SocketIOServer | null = null
-  private userSockets: Map<string, Set<string>> = new Map() // userId -> Set of socketIds
-  private roomParticipants: Map<string, Set<string>> = new Map() // roomId -> Set of userIds
 
   /**
    * Initializes the Socket.IO server with CORS configuration and authentication middleware.
    * Sets up connection handlers for authorized users.
-   * 
+   *
+   * Attaches the Redis adapter so that `io.to(room).emit(...)` calls (here and
+   * in notificationService, which shares this same `io` via getIO()) reach
+   * sockets connected to ANY backend instance, not just this one — without
+   * it, a user connected to instance B never receives an event triggered on
+   * instance A. Presence/room-membership bookkeeping is delegated to
+   * `presenceService` (Redis-backed) for the same reason: an in-memory Map
+   * here would only ever reflect this instance's own connections.
+   *
    * @param server - The HTTP server instance to attach to
    */
   init(server: HTTPServer) {
@@ -28,6 +37,12 @@ class ChatService {
       pingTimeout: 60000,
       pingInterval: 25000,
     })
+
+    const pubClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
+    const subClient = pubClient.duplicate()
+    pubClient.on('error', (err) => logger.error('Redis adapter pub client error', { error: err.message }))
+    subClient.on('error', (err) => logger.error('Redis adapter sub client error', { error: err.message }))
+    this.io.adapter(createAdapter(pubClient, subClient))
 
     this.io.use(async (socket, next) => {
       try {
@@ -66,11 +81,8 @@ class ChatService {
   private handleConnection(socket: Socket<any, any, any, SocketData>) {
     const { userId, walletAddress } = socket.data
 
-    // Track user sockets
-    if (!this.userSockets.has(userId)) {
-      this.userSockets.set(userId, new Set())
-    }
-    this.userSockets.get(userId)!.add(socket.id)
+    // Track presence in shared (Redis) state, not per-instance memory.
+    presenceService.addConnection(userId).catch((err) => logger.error('Failed to record presence', { userId, err }))
 
     // Join user to their chat rooms
     this.joinUserRooms(socket, userId)
@@ -124,11 +136,7 @@ class ChatService {
 
       for (const participant of participantRooms) {
         socket.join(participant.roomId)
-        
-        if (!this.roomParticipants.has(participant.roomId)) {
-          this.roomParticipants.set(participant.roomId, new Set())
-        }
-        this.roomParticipants.get(participant.roomId)!.add(userId)
+        await presenceService.joinGroup(userId, participant.roomId)
 
         // Update last seen
         await prisma.chatParticipant.update({
@@ -164,11 +172,7 @@ class ChatService {
     }
 
     socket.join(roomId)
-
-    if (!this.roomParticipants.has(roomId)) {
-      this.roomParticipants.set(roomId, new Set())
-    }
-    this.roomParticipants.get(roomId)!.add(userId)
+    await presenceService.joinGroup(userId, roomId)
 
     // Update last seen
     await prisma.chatParticipant.update({
@@ -186,6 +190,10 @@ class ChatService {
 
   private leaveRoom(socket: Socket, roomId: string) {
     socket.leave(roomId)
+    const { userId } = (socket as Socket<any, any, any, SocketData>).data
+    presenceService
+      .leaveGroup(userId, roomId)
+      .catch((err) => logger.error('Failed to record presence', { userId, roomId, err }))
     logger.info(`User left room ${roomId}`)
   }
 
@@ -246,14 +254,9 @@ class ChatService {
   }
 
   private handleDisconnect(socket: Socket, userId: string) {
-    // Remove socket from user tracking
-    const userSocketSet = this.userSockets.get(userId)
-    if (userSocketSet) {
-      userSocketSet.delete(socket.id)
-      if (userSocketSet.size === 0) {
-        this.userSockets.delete(userId)
-      }
-    }
+    presenceService
+      .removeConnection(userId)
+      .catch((err) => logger.error('Failed to clear presence', { userId, err }))
 
     logger.info(`User disconnected: ${userId}`)
   }

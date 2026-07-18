@@ -1,5 +1,14 @@
 use soroban_sdk::{symbol_short, Address, Env, Symbol, Vec};
 
+use crate::errors::AjoError;
+
+/// Current persisted storage schema version supported by this Wasm.
+///
+/// Any future release that changes the serialized shape of persisted values in
+/// `types.rs` must increment this value and provide an explicit migration before
+/// reads are allowed to proceed. Additive-only releases can keep the version.
+pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
 /// Logical storage key categories used by the Ajo contract.
 ///
 /// Soroban storage uses raw key values; this enum documents the naming
@@ -10,6 +19,10 @@ pub enum StorageKey {
     /// Singleton key for the contract administrator address.
     /// Stored in instance storage under `"ADMIN"`.
     Admin,
+
+    /// Singleton key for the persisted storage schema version.
+    /// Stored in instance storage under `"SCHEMA"`.
+    SchemaVersion,
 
     /// Monotonically increasing counter used to assign unique group IDs.
     /// Stored in instance storage under `"GCOUNTER"`.
@@ -97,6 +110,7 @@ impl StorageKey {
     pub fn to_symbol(&self, _env: &Env) -> Symbol {
         match self {
             StorageKey::Admin => symbol_short!("ADMIN"),
+            StorageKey::SchemaVersion => symbol_short!("SCHEMA"),
             StorageKey::GroupCounter => symbol_short!("GCOUNTER"),
             StorageKey::Group(_) => symbol_short!("GROUP"),
             StorageKey::Contribution(_, _, _) => symbol_short!("CONTRIB"),
@@ -149,6 +163,7 @@ pub fn get_next_group_id(env: &Env) -> u64 {
 /// * `group_id` - The unique identifier for the group
 /// * `group` - The group data to store
 pub fn store_group(env: &Env, group_id: u64, group: &crate::types::Group) {
+    set_schema_version_if_unset(env);
     let key = (symbol_short!("GROUP"), group_id);
     env.storage().persistent().set(&key, group);
 }
@@ -166,8 +181,40 @@ pub fn store_group(env: &Env, group_id: u64, group: &crate::types::Group) {
 /// # Returns
 /// `Some(Group)` if the group exists, `None` otherwise
 pub fn get_group(env: &Env, group_id: u64) -> Option<crate::types::Group> {
+    if ensure_supported_schema(env).is_err() {
+        return None;
+    }
     let key = (symbol_short!("GROUP"), group_id);
     env.storage().persistent().get(&key)
+}
+
+/// Returns the stored schema version, defaulting legacy empty instances to v1.
+pub fn get_schema_version(env: &Env) -> u32 {
+    let key = symbol_short!("SCHEMA");
+    env.storage().instance().get(&key).unwrap_or(CURRENT_SCHEMA_VERSION)
+}
+
+/// Records the schema version after initialization or a successful migration.
+pub fn store_schema_version(env: &Env, version: u32) {
+    let key = symbol_short!("SCHEMA");
+    env.storage().instance().set(&key, &version);
+}
+
+/// Initializes the schema version for legacy-compatible v1 state.
+pub fn set_schema_version_if_unset(env: &Env) {
+    let key = symbol_short!("SCHEMA");
+    if !env.storage().instance().has(&key) {
+        env.storage().instance().set(&key, &CURRENT_SCHEMA_VERSION);
+    }
+}
+
+/// Fails closed when this Wasm does not understand the stored schema.
+pub fn ensure_supported_schema(env: &Env) -> Result<(), AjoError> {
+    if get_schema_version(env) == CURRENT_SCHEMA_VERSION {
+        Ok(())
+    } else {
+        Err(AjoError::SchemaUnsupported)
+    }
 }
 
 /// Removes a group's record from persistent storage.
@@ -272,6 +319,7 @@ pub fn get_cycle_contributions(
 /// * `env` - The contract environment used to access instance storage
 /// * `admin` - The address of the contract administrator
 pub fn store_admin(env: &Env, admin: &Address) {
+    set_schema_version_if_unset(env);
     let key = symbol_short!("ADMIN");
     env.storage().instance().set(&key, admin);
 }

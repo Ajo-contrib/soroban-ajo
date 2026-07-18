@@ -25,6 +25,7 @@ import { searchRouter } from './routes/search'
 import { membersRouter } from './routes/members'
 import { marketingRouter } from './routes/marketing'
 import { socialSharingRouter } from './routes/socialSharing'
+import multisigRouter from './routes/multisig'
 // import { gamificationRouter } from './routes/gamification' // Temporarily disabled
 // import { goalsRouter } from './routes/goals' // Temporarily disabled due to type errors
 import { setupSwagger } from './swagger'
@@ -97,6 +98,7 @@ app.use('/api/search', searchRouter)
 app.use('/api/members', membersRouter)
 app.use('/api/marketing', marketingRouter)
 app.use('/api/share', socialSharingRouter)
+app.use('/api/multisig', apiLimiter, multisigRouter)
 // app.use('/api/gamification', gamificationRouter) // Temporarily disabled due to missing auth middleware
 // app.use('/api/goals', goalsRouter) // Temporarily disabled due to type errors
 

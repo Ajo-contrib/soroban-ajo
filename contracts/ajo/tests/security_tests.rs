@@ -67,7 +67,7 @@ fn test_security_unauthorized_upgrade() {
     let wasm_hash = soroban_sdk::BytesN::from_array(&env, &fake_wasm);
     
     // Attacker tries to upgrade
-    let result = client.try_upgrade(&wasm_hash);
+    let result = client.try_upgrade(&wasm_hash, &1u32);
     assert_eq!(result, Err(Ok(AjoError::Unauthorized)));
 }
 

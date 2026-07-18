@@ -53,11 +53,25 @@ impl AjoContract {
     ///
     /// # Errors
     /// * `Unauthorized` - If the caller is not the admin
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), AjoError> {
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>, schema_version: u32) -> Result<(), AjoError> {
         let admin = storage::get_admin(&env).ok_or(AjoError::Unauthorized)?;
         admin.require_auth();
+        storage::ensure_supported_schema(&env)?;
+
+        // This release intentionally fails closed for non-additive storage-shape
+        // changes. A future Wasm that changes persisted structs must expose and
+        // test an explicit vN->vN+1 migration before this check can be advanced.
+        if schema_version != storage::CURRENT_SCHEMA_VERSION {
+            return Err(AjoError::SchemaMismatch);
+        }
+
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
+    }
+
+    /// Return the persisted storage schema version understood by this Wasm.
+    pub fn storage_schema_version(env: Env) -> u32 {
+        storage::get_schema_version(&env)
     }
 
     /// Pause the contract to prevent state-mutating operations.
@@ -1825,6 +1839,8 @@ pub fn get_refund_record(
     ) -> Result<crate::types::ReminderRecord, AjoError> {
         storage::get_reminder_record(&env, group_id, cycle, &member)
             .ok_or(AjoError::GroupNotFound)
+    }
+
     // ── Milestones & Achievements ─────────────────────────────────────────
 
     /// Returns all milestones achieved by a group.

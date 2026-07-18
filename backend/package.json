@@ -33,6 +33,7 @@
     "@sendgrid/mail": "^8.1.6",
     "@sentry/node": "^10.45.0",
     "@sentry/profiling-node": "^8.30.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@stripe/stripe-js": "^2.4.0",
     "@types/multer": "^2.1.0",
     "@types/socket.io": "^3.0.1",

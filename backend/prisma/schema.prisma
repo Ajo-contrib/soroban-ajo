@@ -733,9 +733,24 @@ model EventStore {
   version       Int
   createdAt     DateTime @default(now())
 
+  @@unique([aggregateId, version])
   @@index([aggregateId])
   @@index([type])
   @@index([sequenceNumber])
+}
+
+/// One row per aggregate: the latest snapshot of its projected state, so
+/// replay only needs to process events appended after `version` instead of
+/// the full history from genesis. Upserted in place — snapshots are not
+/// kept historically.
+model Snapshot {
+  aggregateId   String   @id
+  aggregateType String
+  version       Int
+  state         Json
+  updatedAt     DateTime @updatedAt
+
+  @@index([aggregateType])
 }
 
 // ─── Contribution Schedule ────────────────────────────────────────────────────

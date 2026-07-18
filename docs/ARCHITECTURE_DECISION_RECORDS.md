@@ -14,6 +14,7 @@ This document contains all significant architectural decisions made for the Soro
 8. [ADR-008: State Management](#adr-008-state-management)
 9. [ADR-009: Testing Strategy](#adr-009-testing-strategy)
 10. [ADR-010: Deployment Architecture](#adr-010-deployment-architecture)
+11. [ADR-011: Event Sourcing Scope and Its Relationship to Prisma and the Blockchain](#adr-011-event-sourcing-scope-and-its-relationship-to-prisma-and-the-blockchain)
 
 ---
 
@@ -601,6 +602,149 @@ Code Push → GitHub Actions → Tests → Build → Deploy
 
 ---
 
+## ADR-011: Event Sourcing Scope and Its Relationship to Prisma and the Blockchain
+
+**Status**: Accepted
+**Date**: July 2026
+**Deciders**: Architecture Team
+**Affected Components**: Backend (`backend/src/events/`), Data Layer
+
+### Context
+
+`backend/src/events/` implements an event-sourcing pattern — an append-only
+`EventStore` backed by a Prisma `EventStore` table, domain event types
+(`GROUP_CREATED`, `MEMBER_JOINED`, `CONTRIBUTION_MADE`, etc.), a
+`groupProjection` that reconstructs `GroupState` from an event stream, and
+handler/dispatch scaffolding — merged via PR #540 (closing #461).
+
+An audit of actual call sites (`git grep` for `eventStore`, `dispatchEvent`,
+and `rebuildGroupState` outside `backend/src/events/`) found **zero
+callers**. Nothing in any controller or service appends events, dispatches
+them, or rebuilds a projection. The module compiles and is unit-tested in
+isolation as of this ADR, but nothing in the running application invokes it.
+
+Meanwhile, the actual Group/Contribution domain already has an established
+and very different pattern:
+
+- The **Soroban smart contract is the source of truth** for group and
+  contribution state (see ADR-001, ADR-002). All mutating actions
+  (`createGroup`, `joinGroup`, `contribute`, …) go through `SorobanService`
+  and are submitted on-chain.
+- `backend/src/handlers/contractEventHandlers.ts` listens for parsed
+  contract events and **upserts** the corresponding Prisma rows (e.g.
+  `handleGroupCreated` calls `dbService.upsertGroup(...)`). Prisma here is
+  an idempotent, denormalized **read model** synced from the chain — it is
+  not authoritative, the chain is.
+- In other words, the blockchain itself already functions as this domain's
+  append-only, replayable event log. `contractEventHandlers.ts` is already
+  doing "replay a stream of domain events into a projection" — just against
+  on-chain events instead of the `backend/src/events/` module.
+
+This means `backend/src/events/` was not introduced to replace or
+front the Group/Contribution CRUD tables — it duplicates a shape (event
+types like `GROUP_CREATED`/`MEMBER_JOINED`/`CONTRIBUTION_MADE`, a group
+projection) that the contract-event pipeline already covers, without
+being wired into it. Prior to this ADR, that relationship was implicit
+and undocumented, which is the problem this decision resolves.
+
+### Options Considered
+
+1. **Wire `backend/src/events/` into the Group/Contribution controllers
+   now**, dual-writing off-chain events alongside the on-chain
+   transactions. Rejected for the Group/Contribution domain specifically:
+   it would create a **third** copy of group state (chain, Prisma read
+   model, and this event log) with no clear precedence rule between the
+   Prisma projection already produced by `contractEventHandlers.ts` and a
+   new one produced by `groupProjection` — exactly the kind of ambiguity
+   this audit was opened to eliminate, not add to.
+2. **Make `backend/src/events/` the source of truth for groups**, with
+   Prisma's `Group`/`Contribution` tables becoming a projection of it.
+   Rejected: group/contribution state is already sourced from the chain;
+   moving authority to an off-chain Postgres event log would contradict
+   ADR-001/ADR-002 and require a data-migration effort far beyond this
+   audit's scope.
+3. **Keep it as an unused, hardened, opt-in module reserved for domains
+   that have no existing event log** (off-chain-only workflows — e.g.
+   disputes, admin actions, user lifecycle events — where nothing like
+   `contractEventHandlers.ts` already plays that role), and fix its
+   correctness gaps so it is safe to adopt when such a need arises.
+   **Selected.**
+
+### Decision
+
+**`backend/src/events/` is currently unused in production and is not the
+source of truth for any domain.** Prisma remains a CRUD/read-model layer
+everywhere in the backend today:
+
+- For the **Group/Contribution domain**, Prisma is a read model kept in
+  sync with the Soroban smart contract (the actual source of truth) via
+  `contractEventHandlers.ts`. Do **not** additionally route these actions
+  through `backend/src/events/` — that would create a second, competing
+  projection of the same state.
+- For **any other domain**, Prisma is the source of truth directly (plain
+  CRUD), same as before this audit.
+- `backend/src/events/` is kept as a hardened, opt-in library for a
+  **future** off-chain domain that (a) has no existing on-chain or other
+  event log, and (b) genuinely needs full history/audit/replay. Until a
+  domain is explicitly wired to it, treat it as unused.
+
+If you are building a new feature, use this to decide which pattern
+applies:
+
+| Your feature involves... | Use |
+|---|---|
+| An action the smart contract already executes (group lifecycle, contributions, payouts) | `SorobanService` → contract → `contractEventHandlers.ts` → Prisma upsert (existing pattern) |
+| A purely off-chain domain with normal query needs | Prisma CRUD directly, like the rest of the backend |
+| A purely off-chain domain that needs full replayable history for audit or point-in-time reconstruction, with no existing event log | `backend/src/events/` — call `eventStore.append()` from your service, add a projection, and **wire it in explicitly** (nothing does this automatically) |
+
+Two correctness gaps were fixed as part of this decision, since they would
+have made the module unsafe to adopt regardless of which domain eventually
+uses it:
+
+- **Optimistic concurrency**: `EventStore.append()` previously accepted
+  any caller-supplied `version` with no check, and the Prisma model had no
+  uniqueness constraint on `(aggregateId, version)`. Two concurrent writers
+  could append conflicting versions for the same aggregate, and replay
+  would silently reflect only one of them. A DB-level unique constraint
+  plus a `ConflictError` on violation now makes this a hard failure instead
+  of silent corruption (`backend/src/events/eventStore.ts`).
+- **Unbounded replay cost**: `rebuildProjection` always replayed an
+  aggregate's full event history from genesis. A `Snapshot` table plus
+  snapshot-aware replay (`backend/src/events/projections/index.ts`,
+  `backend/src/events/snapshotStore.ts`) now bounds this for any
+  long-lived aggregate, should one ever be wired in.
+
+See `backend/src/events/README.md` for the mechanics and the test suite
+under `backend/src/__tests__/unit/events/` for the correctness guarantees
+(full-replay/incremental-processing equivalence, snapshot/full-replay
+equivalence, and concurrent-write rejection).
+
+### Consequences
+
+**Positive:**
+- Removes the ambiguity the audit was opened to resolve: there is now an
+  explicit, written answer to "is this event-sourced or CRUD, and what's
+  authoritative" for every domain in the backend.
+- The module's correctness gaps (concurrency, unbounded replay) are fixed
+  before any domain depends on them, instead of being discovered in
+  production.
+- No production code paths changed, so this carries no deployment risk.
+
+**Negative:**
+- The module remains unused; the 264 lines added in PR #540 still deliver
+  no product value until a domain is explicitly wired to it.
+- A future contributor could still wire it into the Group/Contribution
+  domain by mistake without reading this ADR. Mitigated by the table above
+  and by `backend/src/events/README.md`, but not mechanically enforced.
+
+### Related Decisions
+
+- ADR-001: Blockchain Platform Selection (the chain is the source of truth
+  this ADR defers to)
+- ADR-005: Database Architecture (Prisma's role as CRUD/read-model layer)
+
+---
+
 ## Decision Review Process
 
 ### When to Create an ADR
@@ -669,8 +813,8 @@ None yet. As decisions are superseded, they will be marked as deprecated with re
 
 ---
 
-**Last Updated**: April 2026  
-**Version**: 1.0.0  
+**Last Updated**: July 2026  
+**Version**: 1.1.0  
 **Maintainers**: Ajo Architecture Team
 
 For questions or to propose new ADRs, please open an issue on GitHub or contact the architecture team.

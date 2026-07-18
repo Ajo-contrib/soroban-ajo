@@ -185,5 +185,11 @@ pub enum AjoError {
 
     /// Member's credit score is below the group's minimum requirement.
     InsufficientCreditScore = 58,
+
+    /// Stored schema version is not supported by this Wasm.
+    SchemaUnsupported = 59,
+
+    /// Requested upgrade does not declare compatibility with this storage schema.
+    SchemaMismatch = 60,
 }
 

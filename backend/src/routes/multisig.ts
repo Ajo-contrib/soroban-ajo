@@ -1,64 +1,79 @@
-import { Router, Request, Response } from 'express';
-import { MultiSigService } from '@/services/multiSigService';
-import { PrismaClient } from '@prisma/client';
+import { Router, Request, Response } from 'express'
+import {
+  createMultiSigConfig,
+  getMultiSigConfig,
+  createProposal,
+  getProposal,
+  signProposal,
+  executeProposal,
+  getGroupProposals,
+} from '@/controllers/multisigController'
+import {
+  multiSigConfigSchema,
+  createProposalSchema,
+  signProposalSchema,
+} from '@/types/multisig'
+import { ZodError } from 'zod'
 
-const router = Router();
-const prisma = new PrismaClient();
-const multiSigService = new MultiSigService(prisma);
+const router = Router()
 
-router.post('/proposals', async (req: Request, res: Response) => {
+// Validation middleware
+const validateRequest = (schema: any) => (req: Request, res: Response, next: Function) => {
   try {
-    const { signers, threshold, expiresAt } = req.body;
-    const proposal = await multiSigService.createProposal(
-      req.body.groupId,
-      signers,
-      threshold,
-      Math.ceil((expiresAt - Date.now()) / (60 * 1000))
-    );
-    res.json(proposal);
+    const validated = schema.parse(req.body)
+    ;(req as any).validated = validated
+    next()
   } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to create proposal' });
-  }
-});
-
-router.get('/proposals/:proposalId', async (req: Request, res: Response) => {
-  try {
-    const proposal = await multiSigService.getProposal(req.params.proposalId);
-    if (!proposal) {
-      return res.status(404).json({ error: 'Proposal not found' });
+    if (error instanceof ZodError) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: error.errors,
+      })
     }
-    res.json(proposal);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch proposal' });
+    return res.status(400).json({ error: 'Validation failed' })
   }
-});
+}
 
-router.post('/proposals/:proposalId/sign', async (req: Request, res: Response) => {
-  try {
-    const { signer } = req.body;
-    const proposal = await multiSigService.signProposal(req.params.proposalId, signer);
-    res.json(proposal);
-  } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to sign proposal' });
-  }
-});
+/**
+ * POST /multisig/config
+ * Create a multi-sig configuration for a group
+ */
+router.post('/config', validateRequest(multiSigConfigSchema), createMultiSigConfig)
 
-router.post('/proposals/:proposalId/execute', async (req: Request, res: Response) => {
-  try {
-    const success = await multiSigService.executeProposal(req.params.proposalId);
-    res.json({ success });
-  } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to execute proposal' });
-  }
-});
+/**
+ * GET /multisig/config/:groupId
+ * Fetch multi-sig configuration for a group
+ */
+router.get('/config/:groupId', getMultiSigConfig)
 
-router.get('/groups/:groupId/proposals', async (req: Request, res: Response) => {
-  try {
-    const proposals = await multiSigService.getGroupProposals(req.params.groupId);
-    res.json(proposals);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch proposals' });
-  }
-});
+/**
+ * POST /multisig/proposals
+ * Create a new proposal
+ */
+router.post('/proposals', validateRequest(createProposalSchema), createProposal)
 
-export default router;
+/**
+ * GET /multisig/proposals/:proposalId
+ * Fetch a specific proposal
+ */
+router.get('/proposals/:proposalId', getProposal)
+
+/**
+ * POST /multisig/proposals/:proposalId/sign
+ * Sign a proposal with your wallet
+ */
+router.post('/proposals/:proposalId/sign', validateRequest(signProposalSchema), signProposal)
+
+/**
+ * POST /multisig/proposals/:proposalId/execute
+ * Execute a proposal (after threshold is reached)
+ */
+router.post('/proposals/:proposalId/execute', executeProposal)
+
+/**
+ * GET /multisig/groups/:groupId/proposals
+ * List all proposals for a group with optional status filter
+ */
+router.get('/groups/:groupId/proposals', getGroupProposals)
+
+export default router

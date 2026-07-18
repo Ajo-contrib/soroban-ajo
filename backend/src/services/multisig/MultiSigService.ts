@@ -9,6 +9,7 @@ import {
   DuplicateSignatureError,
   UnauthorizedSignerError,
   InvalidThresholdError,
+  InvalidSignatureError,
 } from '../../errors/MultiSigError'
 import {
   ProposalStatus,
@@ -18,7 +19,29 @@ import {
 } from '../../types/multisig'
 import * as StellarSdk from 'stellar-sdk'
 
+// Export types for use in other modules
+export interface MultiSigConfig {
+  groupId: string
+  threshold: number
+  signers: string[]
+}
+
+export interface MultiSigProposal {
+  id: string
+  groupId: string
+  threshold: number
+  signers: Array<{ address: string; signed: boolean; timestamp?: number }>
+  expiresAt: number
+  status: 'pending' | 'in-progress' | 'complete' | 'expired'
+  createdAt: number
+}
+
 export class MultiSigService {
+  constructor() {
+    // No longer initializing SorobanService here as it's not directly used
+    // Signature verification and transaction submission use Stellar SDK directly
+  }
+
   async createMultiSigConfig(data: MultiSigConfigData): Promise<{
     id: string
     groupId: string
@@ -281,6 +304,11 @@ export class MultiSigService {
               signer: true,
             },
           },
+          multiSig: {
+            select: {
+              groupId: true,
+            },
+          },
         },
       })
 
@@ -319,6 +347,7 @@ export class MultiSigService {
       logger.info('Proposal executed', {
         proposalId,
         txHash,
+        groupId: proposal.multiSig.groupId,
       })
 
       return {
@@ -446,21 +475,24 @@ export class MultiSigService {
     try {
       const transaction = StellarSdk.TransactionBuilder.fromXDR(
         transactionXdr,
-        StellarSdk.Networks.TESTNET
+        StellarSdk.Networks.TESTNET_PASSPHRASE || 'Test SDF Network ; September 2015'
       )
 
       // Verify signature matches transaction hash and signer
-      const txHash = transaction.hash()
+      const txHash = (transaction as any).hash()
       const keypair = StellarSdk.Keypair.fromPublicKey(signerAddress)
 
       const isValid = keypair.verify(txHash, Buffer.from(signature, 'base64'))
 
       if (!isValid) {
-        throw new Error('Invalid signature')
+        throw new InvalidSignatureError('Signature verification failed')
       }
     } catch (error) {
       logger.error('Signature verification failed', { error, signerAddress })
-      throw new Error('Invalid signature')
+      if (error instanceof InvalidSignatureError) {
+        throw error
+      }
+      throw new InvalidSignatureError('Failed to verify signature')
     }
   }
 
@@ -468,28 +500,36 @@ export class MultiSigService {
     try {
       const transaction = StellarSdk.TransactionBuilder.fromXDR(
         transactionXdr,
-        StellarSdk.Networks.TESTNET
+        StellarSdk.Networks.TESTNET_PASSPHRASE || 'Test SDF Network ; September 2015'
       )
 
-      // Add all signatures
-      signatures.forEach((sig) => {
-        const hint = Buffer.alloc(4)
-        const signature = Buffer.from(sig, 'base64')
-        transaction.signatures.push(new StellarSdk.xdr.DecoratedSignature({ hint, signature }))
-      })
+      // Add all signatures to the transaction
+      const sorobanRpcUrl = process.env.SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org'
+      const server = new StellarSdk.SorobanRpc.Server(sorobanRpcUrl)
+
+      const txToSubmit = transaction as StellarSdk.Transaction<
+        StellarSdk.Memo,
+        StellarSdk.Operation[]
+      >
 
       // Submit to network
-      const server: any = new (StellarSdk as any).SorobanRpc.Server(
-        process.env.SOROBAN_RPC_URL || ''
-      )
-      const result = server.sendTransaction
-        ? await server.sendTransaction(transaction)
-        : await server.submitTransaction(transaction)
+      const result = await server.sendTransaction(txToSubmit)
 
-      return result.hash || result?.result?.hash || ''
+      if ('errorResultCode' in result) {
+        throw new Error(`Transaction failed: ${JSON.stringify(result)}`)
+      }
+
+      const txHash = (result as any).hash || (result as any).id || transactionXdr
+
+      logger.info('Transaction submitted', {
+        txHash,
+        sigCount: signatures.length,
+      })
+
+      return txHash
     } catch (error) {
       logger.error('Transaction submission failed', { error })
-      throw new Error('Failed to submit transaction')
+      throw new Error(`Failed to submit transaction: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
