@@ -1,7 +1,7 @@
 import { EventType, EventHandler, DomainEvent } from '../types'
 import { groupEventHandler } from './groupEventHandler'
 import { contributionEventHandler } from './contributionEventHandler'
-import logger from '../../utils/logger'
+import { logger } from '../../utils/logger'
 
 const handlerMap: Partial<Record<EventType, EventHandler[]>> = {
   GROUP_CREATED: [groupEventHandler],

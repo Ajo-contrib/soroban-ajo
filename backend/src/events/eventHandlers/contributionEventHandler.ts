@@ -1,5 +1,5 @@
 import { DomainEvent, EventHandler } from '../types'
-import logger from '../../utils/logger'
+import { logger } from '../../utils/logger'
 
 export const contributionEventHandler: EventHandler = async (event: DomainEvent) => {
   switch (event.type) {
