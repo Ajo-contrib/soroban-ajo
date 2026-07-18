@@ -1,6 +1,7 @@
 import { addNotificationJob, addBatchNotificationJobs } from '../queues/notificationQueue';
 import { prisma } from '../config/database';
 import { logger } from '../utils/logger';
+import { presenceService } from './realtimePresence';
 
 export type NotificationType = string;
 
@@ -24,12 +25,17 @@ export interface SocketNotification {
 
 export class NotificationService {
   private io: any = null;
-  private userSockets: Map<string, Set<string>> = new Map();
 
   /**
-   * Attaches this service to a shared Socket.IO server instance and starts
-   * tracking which users are online (identified via socket.data.userId, set
-   * by the auth middleware in chatService).
+   * Attaches this service to a shared Socket.IO server instance.
+   *
+   * Presence (which users are online) is delegated to `presenceService`,
+   * which is Redis-backed rather than an in-memory Map — with more than one
+   * backend instance behind a load balancer, an in-memory map here would only
+   * ever reflect sockets connected to THIS instance, making `isUserOnline`
+   * wrong for users connected elsewhere. The shared `io` passed in (from
+   * chatService, which attaches the Redis adapter) is what makes
+   * `sendToUser`/`sendToGroup` below reach sockets on any instance too.
    */
   init(io: any): void {
     this.io = io;
@@ -37,10 +43,7 @@ export class NotificationService {
       const userId = socket.data?.userId;
       if (!userId) return;
 
-      if (!this.userSockets.has(userId)) {
-        this.userSockets.set(userId, new Set());
-      }
-      this.userSockets.get(userId)!.add(socket.id);
+      presenceService.addConnection(userId).catch((err: unknown) => logger.error('Failed to record presence', { userId, err }));
       socket.join(`user:${userId}`);
 
       prisma.groupMember
@@ -51,16 +54,13 @@ export class NotificationService {
         .catch((err: unknown) => logger.error('Failed to join group rooms', { userId, err }));
 
       socket.on('disconnect', () => {
-        this.userSockets.get(userId)?.delete(socket.id);
-        if (this.userSockets.get(userId)?.size === 0) {
-          this.userSockets.delete(userId);
-        }
+        presenceService.removeConnection(userId).catch((err: unknown) => logger.error('Failed to clear presence', { userId, err }));
       });
     });
   }
 
-  isUserOnline(userId: string): boolean {
-    return (this.userSockets.get(userId)?.size ?? 0) > 0;
+  isUserOnline(userId: string): Promise<boolean> {
+    return presenceService.isOnline(userId);
   }
 
   /**
