@@ -567,6 +567,14 @@ pub struct MemberStats {
     pub on_time_contributions: u32,
     pub late_contributions: u32,
     pub total_amount_contributed: i128,
+    /// Contributions made in cycles where the group's per-cycle contribution
+    /// amount met [`crate::reputation::MIN_REPUTATION_STAKE`]. Only these
+    /// count toward the credit score's reliability/completion/volume
+    /// components, so cheap dust-amount groups can't inflate a score.
+    pub qualifying_contributions: u32,
+    pub qualifying_on_time_contributions: u32,
+    pub qualifying_groups_completed: u32,
+    pub qualifying_amount_contributed: i128,
     pub achievements: Vec<MemberAchievement>,
 }
 

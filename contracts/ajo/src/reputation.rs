@@ -1,14 +1,31 @@
 /// On-chain reputation system for Ajo members.
 ///
 /// Credit score formula (0–1000 scale):
-///   - Payment reliability  40 % → on_time / total_contributions × 400
-///   - Groups completed     20 % → min(total_groups_completed, 10) × 20
-///   - Volume contributed   20 % → tiered by total_amount_contributed (stroops)
-///   - Penalty history      20 % → (1 - late_contributions / total_contributions) × 200
+///   - Payment reliability  40 % → qualifying_on_time / qualifying_contributions × 400
+///   - Groups completed     20 % → min(qualifying_groups_completed, 10) × 20
+///   - Volume contributed   20 % → tiered by qualifying_amount_contributed (stroops)
+///   - Penalty history      20 % → (1 - late_contributions / qualifying_contributions) × 200
 ///
 /// The score is recalculated and stored every time a member's stats change
 /// (contribution, payout, group completion).  Callers should invoke
 /// `update_member_reputation` after any such event.
+///
+/// ## Sybil / collusion resistance
+///
+/// Every component above is keyed off "qualifying" activity rather than raw
+/// activity counts. A contribution only qualifies — and only then moves the
+/// needle on a member's score — if the group's per-cycle contribution amount
+/// is at least [`MIN_REPUTATION_STAKE`]. Groups below that amount still work
+/// exactly as before (they can contribute, get paid out, complete), they
+/// simply don't generate any reputation.
+///
+/// This closes the cheapest sybil attack against the old formula: creating
+/// many 2-member, dust-amount ROSCA groups where the attacker controls both
+/// "members" and rotates a few stroops between them. Under the old formula
+/// that reached Platinum (800/1000) for a fraction of a cent in fees. Under
+/// this one it scores 0, because none of the activity qualifies. See
+/// `docs/reputation-sybil-analysis.md` for the full cost analysis and the
+/// tests in `tests/reputation_sybil_tests.rs` for the attack scenario.
 use soroban_sdk::{Address, Env};
 
 use crate::errors::AjoError;
@@ -17,6 +34,16 @@ use crate::types::{
     CreditScoreSnapshot, PaymentHistoryEntry, ReputationScore, ReputationTier,
 };
 use crate::utils;
+
+/// Minimum per-cycle contribution amount (in stroops) for a group's
+/// participation to count toward a member's credit score.
+///
+/// Set to 10 XLM — the same amount the volume component already treats as
+/// the first tier of "real" economic activity (see `volume_score`). Below
+/// this, a round of contribute/payout moves too little value to represent
+/// genuine stake-at-risk, so it's cheap to fabricate at scale and is
+/// excluded from scoring entirely rather than counted at a discount.
+pub const MIN_REPUTATION_STAKE: i128 = 10 * 10_000_000;
 
 // ── Score calculation ─────────────────────────────────────────────────────
 
@@ -55,29 +82,35 @@ fn tier_from_score(score: u32) -> ReputationTier {
 
 /// Computes the full credit score (0–1000) from a member's aggregated stats.
 ///
-/// Returns 0 when the member has no contribution history yet.
+/// Returns 0 when the member has no contribution history yet, and also when
+/// the member's activity exists only in groups below [`MIN_REPUTATION_STAKE`]
+/// (i.e. nothing qualifies yet — see module docs).
 pub fn compute_credit_score(stats: &crate::types::MemberStats) -> u32 {
-    let total = stats.total_contributions;
-    if total == 0 {
+    if stats.total_contributions == 0 {
+        return 0;
+    }
+
+    let qualifying_total = stats.qualifying_contributions;
+    if qualifying_total == 0 {
         return 0;
     }
 
     // 1. Payment reliability component (0–400)
-    let reliability = (stats.on_time_contributions * 400) / total;
+    let reliability = (stats.qualifying_on_time_contributions * 400) / qualifying_total;
 
     // 2. Groups completed component (0–200): cap at 10 completed groups
-    let completed_capped = stats.total_groups_completed.min(10);
+    let completed_capped = stats.qualifying_groups_completed.min(10);
     let completion = completed_capped * 20;
 
     // 3. Volume component (0–200)
-    let volume = volume_score(stats.total_amount_contributed);
+    let volume = volume_score(stats.qualifying_amount_contributed);
 
     // 4. Penalty component (0–200): penalise late contributions
     let penalty_component = if stats.late_contributions == 0 {
         200
     } else {
-        let on_time = total.saturating_sub(stats.late_contributions);
-        (on_time * 200) / total
+        let on_time = qualifying_total.saturating_sub(stats.late_contributions);
+        (on_time * 200) / qualifying_total
     };
 
     reliability + completion + volume + penalty_component
