@@ -1598,13 +1598,16 @@ pub fn get_refund_record(
     }
 
     /// Get detailed fraud risk profile for a member
-    pub fn get_member_fraud_profile(env: Env, member: Address) -> crate::types::FraudRiskProfile {
-        crate::insurance::get_member_fraud_profile(&env, &member)
+    pub fn get_member_fraud_profile(env: Env, member: Address) -> u32 {
+        // Return the enhanced risk score instead of a full profile
+        crate::insurance::get_member_risk_score(&env, &member)
     }
 
     /// Get detailed group risk assessment  
-    pub fn get_group_risk_assessment(env: Env, group_id: u64) -> Result<crate::types::GroupRiskAssessment, AjoError> {
-        crate::insurance::get_group_assessment(&env, group_id)
+    pub fn get_group_risk_assessment(env: Env, group_id: u64) -> Result<u32, AjoError> {
+        // Return the enhanced group risk rating
+        let group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+        Ok(crate::insurance::get_group_risk_rating(&env, &group))
     }
 
     // ── Dynamic payout ordering ───────────────────────────────────────────────
