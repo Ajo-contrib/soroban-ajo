@@ -15,6 +15,7 @@ This document contains all significant architectural decisions made for the Soro
 9. [ADR-009: Testing Strategy](#adr-009-testing-strategy)
 10. [ADR-010: Deployment Architecture](#adr-010-deployment-architecture)
 11. [ADR-011: Event Sourcing Scope and Its Relationship to Prisma and the Blockchain](#adr-011-event-sourcing-scope-and-its-relationship-to-prisma-and-the-blockchain)
+12. [ADR-012: Service Instantiation Pattern — Retire the DI Container](#adr-012-service-instantiation-pattern--retire-the-di-container)
 
 ---
 
@@ -745,7 +746,98 @@ equivalence, and concurrent-write rejection).
 
 ---
 
-## Decision Review Process
+## ADR-012: Service Instantiation Pattern — Retire the DI Container
+
+**Status**: Accepted
+**Date**: July 2026
+**Deciders**: Backend Team
+**Affected Components**: Backend (`backend/src/services/`, `backend/src/di/`)
+
+### Context
+
+`backend/src/di/` (`container.ts`, `bindings.ts`, `types.ts`, `index.ts` —
+338 lines total) implemented a generic DI container (`register`,
+`registerClass`, `registerInstance`, `resolve`) intended to manage
+instantiation and lifecycle for the services under `backend/src/services/`.
+
+An audit of actual usage (grepping the whole backend for imports of
+`di/container`, `di/bindings`, `di/index`, `DIContainer`, `setupDependencies`,
+and `container.resolve`) found **zero references anywhere outside the `di/`
+directory itself** — not in `src/index.ts` (the app entry point), not in any
+controller, route, or test. `setupDependencies()` was never called at
+startup. Every one of the eleven bindings registered in `bindings.ts`
+(`SorobanService`, `ContractService`, `GroupService`, `UserService`,
+`NotificationService`, `AuthService`, `GamificationService`, `RefundService`,
+`DisputeService`, `EmailService`, `CacheService`, `WebhookService`) was a
+placeholder factory that returns `null` — none were ever wired to a real
+implementation.
+
+Meanwhile, the ~86 files under `backend/src/services/` (including
+`services/gamification/`, `services/marketing/`, `services/multisig/`) were
+already consistently *not* using the container. A full inventory of the
+top-level 78 service files by export shape:
+
+| Pattern | Count | Description |
+|---|---|---|
+| Singleton instance export | 44 | `export const xService = new XService()` (or `export default new X()`) at module scope — e.g. `notificationService.ts`, `groupsService.ts`, `cacheService.ts` |
+| Class export, caller instantiates | 16 | `export class XService { ... }`, instantiated with `new` at each call site (per-request or per-use) — e.g. `referralService.ts`, `stripeService.ts`, `paymentGatewayService.ts` |
+| Function-module (namespace of functions, no class) | 11 | `export async function ...` — e.g. `searchService.ts`, `i18nService.ts`, `calendarService.ts` |
+| Static-only class (no instance) | 4 | Methods called as `ClassName.method()` — e.g. `authService.ts`, `FraudDetector.ts` |
+| Other (base/abstract classes, not real services) | 3 | `BaseService.ts`, `ExampleRefactoredService.ts` are generic Prisma CRUD base classes meant to be extended, not instantiated; `backupCodeService.ts` mixes patterns |
+
+**DI-container-managed services: 0.** Direct-instantiation services (across
+all four patterns above): all of them. There was no partial migration to
+undo — the container was dead code from the start.
+
+### Options Considered
+
+1. **Complete the migration**: implement the eleven placeholder bindings for
+   real, migrate ~86 services to be resolved via `container.resolve()`, and
+   add compatibility singleton exports during a transition window. Rejected
+   as disproportionate: no code depends on the container today, the
+   direct-instantiation pattern already works and is well understood by
+   contributors, and introducing container resolution across every
+   controller/route would be a large, high-risk change for a benefit
+   (mock injection, lifecycle control) the codebase hasn't needed in
+   practice — services are already unit-testable via `jest.mock()` on the
+   module.
+2. **Retire the DI container**: delete `backend/src/di/`, keep the
+   direct-instantiation patterns already in use, and codify them in
+   contribution docs so new services stop guessing which pattern to follow.
+
+### Decision
+
+**Retire the DI container.** `backend/src/di/` has been removed. The
+existing direct-instantiation patterns remain as-is (no call sites needed to
+change, since none used the container). [CONTRIBUTING_GUIDELINES.md](../CONTRIBUTING_GUIDELINES.md)
+now documents the singleton-export pattern as the default for new backend
+services, with the class-export and function-module variants named as
+acceptable alternatives for their respective cases (per-request state vs.
+stateless utility functions).
+
+### Consequences
+
+**Positive:**
+- One documented, consistently-followed pattern instead of a 338-line
+  unused abstraction sitting alongside it.
+- New contributors no longer have to guess whether a new service should be
+  DI-registered or a plain singleton — `CONTRIBUTING_GUIDELINES.md` says.
+- No call sites changed, so this carries no runtime risk.
+
+**Negative:**
+- Services still self-manage their dependencies (e.g. importing `prisma`
+  or other singletons directly) rather than having them injected, so
+  swapping an implementation for a test still relies on `jest.mock()`
+  rather than container overrides. If a real need for constructor-injected
+  mocking emerges, it should be reconsidered as a new ADR rather than
+  reviving this container.
+
+### Related Decisions
+
+- ADR-003: Backend Framework (Express + services/controllers layering this
+  decision operates within)
+
+---
 
 ### When to Create an ADR
 
@@ -814,7 +906,7 @@ None yet. As decisions are superseded, they will be marked as deprecated with re
 ---
 
 **Last Updated**: July 2026  
-**Version**: 1.1.0  
+**Version**: 1.2.0  
 **Maintainers**: Ajo Architecture Team
 
 For questions or to propose new ADRs, please open an issue on GitHub or contact the architecture team.

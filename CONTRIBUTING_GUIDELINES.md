@@ -104,6 +104,32 @@ npm run lint
 * Keep controllers thin and move logic into services
 * Handle errors consistently
 
+#### Service Pattern
+
+Services live in `backend/src/services/` and are instantiated directly —
+there is no DI/IoC container in this codebase (see
+[ADR-012](docs/ARCHITECTURE_DECISION_RECORDS.md#adr-012-service-instantiation-pattern--retire-the-di-container)
+for why one was removed). Pick the pattern that matches the service's
+shape:
+
+* **Stateful service used app-wide (default choice)**: export a singleton
+  instance created at module load.
+  ```ts
+  class NotificationService { /* ... */ }
+  export const notificationService = new NotificationService()
+  ```
+  Import the singleton directly (`import { notificationService } from
+  '../services/notificationService'`) wherever it's needed. To substitute a
+  mock in tests, use `jest.mock('../services/notificationService')`.
+* **Service that needs per-request or per-call state**: export the class
+  and let the caller instantiate it where needed, e.g. a controller
+  constructing it with request-scoped config.
+* **Stateless logic with no instance data**: export plain functions instead
+  of a class (a "function module"), e.g. `searchService.ts`.
+
+Do not introduce a new DI container, service locator, or registry —
+consolidate on one of the patterns above.
+
 #### Linting and Type Checking
 
 ```bash
