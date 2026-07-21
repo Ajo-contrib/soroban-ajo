@@ -2,7 +2,17 @@ import { socialService } from '../../../src/services/gamification/SocialService'
 import { prisma } from '../../../src/config/database';
 import { RateLimitExceededError } from '../../../src/errors/GamificationError';
 
-jest.mock('../../../src/config/database');
+jest.mock('../../../src/config/database', () => ({
+  prisma: {
+    userFollow: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      deleteMany: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+    },
+  },
+}));
 jest.mock('../../../src/utils/logger', () => ({
   logger: {
     info: jest.fn(),
@@ -50,13 +60,16 @@ describe('SocialService', () => {
       (prisma.userFollow.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.userFollow.create as jest.Mock).mockResolvedValue({});
 
+      // Use a unique user ID to avoid state leaking from earlier tests in this suite
+      const testUser = 'user_ratelimit_test';
+
       // Follow 20 users (max per hour)
       for (let i = 0; i < 20; i++) {
-        await socialService.followUser('user1', `user${i + 2}`);
+        await socialService.followUser(testUser, `user${i + 100}`);
       }
 
       // 21st follow should be rate limited
-      await expect(socialService.followUser('user1', 'user22')).rejects.toThrow(
+      await expect(socialService.followUser(testUser, 'user200')).rejects.toThrow(
         RateLimitExceededError
       );
     });

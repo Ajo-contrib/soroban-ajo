@@ -2,7 +2,16 @@ import { streakService } from '../../../src/services/gamification/StreakService'
 import { prisma } from '../../../src/config/database';
 import { POINTS_CONFIG } from '../../../src/types/gamification';
 
-jest.mock('../../../src/config/database');
+jest.mock('../../../src/config/database', () => ({
+  prisma: {
+    userGamification: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    $transaction: jest.fn(),
+  },
+}));
 jest.mock('../../../src/utils/logger', () => ({
   logger: {
     info: jest.fn(),

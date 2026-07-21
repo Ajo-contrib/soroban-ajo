@@ -6,7 +6,13 @@ import { achievementService } from '../../../src/services/gamification/Achieveme
 import { challengeService } from '../../../src/services/gamification/ChallengeService';
 import { POINTS_CONFIG, ReferenceType } from '../../../src/types/gamification';
 
-jest.mock('../../../src/config/database');
+jest.mock('../../../src/config/database', () => ({
+  prisma: {
+    userGamification: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+    activityFeed: { create: jest.fn(), findMany: jest.fn() },
+    $transaction: jest.fn(),
+  },
+}));
 jest.mock('../../../src/utils/logger', () => ({
   logger: {
     info: jest.fn(),

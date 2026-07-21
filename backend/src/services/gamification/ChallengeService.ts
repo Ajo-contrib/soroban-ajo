@@ -145,7 +145,7 @@ export class ChallengeService {
 
   private parseRequirement(requirementJson: string): ChallengeRequirement {
     const parsed = JSON.parse(requirementJson);
-    return challengeRequirementSchema.parse(parsed);
+    return challengeRequirementSchema.parse(parsed) as ChallengeRequirement;
   }
 
   async getUserChallenges(userId: string): Promise<

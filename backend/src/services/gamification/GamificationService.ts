@@ -2,8 +2,8 @@ import { prisma } from '../../config/database';
 import { logger } from '../../utils/logger';
 import { pointsService } from './PointsService';
 import { streakService } from './StreakService';
-// import { achievementService } from './AchievementService'; // Temporarily disabled
-// import { challengeService } from './ChallengeService'; // Temporarily disabled
+import { achievementService } from './AchievementService';
+import { challengeService } from './ChallengeService';
 import { POINTS_CONFIG, ReferenceType, ActivityType } from '../../types/gamification';
 
 export class GamificationService {
@@ -25,12 +25,10 @@ export class GamificationService {
       const streakResult = await streakService.updateContributionStreak(userId);
 
       // Check and award achievements
-      // const achievementsUnlocked = await achievementService.checkAndAwardAchievements(userId);
-      const achievementsUnlocked: string[] = []; // Temporarily disabled
+      const achievementsUnlocked = await achievementService.checkAndAwardAchievements(userId);
 
       // Update challenge progress
-      // await challengeService.updateChallengeProgress(userId, 'CONTRIBUTION');
-      // Temporarily disabled
+      await challengeService.updateChallengeProgress(userId, 'CONTRIBUTION');
 
       // Create activity feed entry
       await this.createActivity(
@@ -90,12 +88,10 @@ export class GamificationService {
       });
 
       // Check and award achievements
-      // const achievementsUnlocked = await achievementService.checkAndAwardAchievements(userId);
-      const achievementsUnlocked: string[] = []; // Temporarily disabled
+      const achievementsUnlocked = await achievementService.checkAndAwardAchievements(userId);
 
       // Update challenge progress
-      // await challengeService.updateChallengeProgress(userId, 'GROUP_COMPLETE');
-      // Temporarily disabled
+      await challengeService.updateChallengeProgress(userId, 'GROUP_COMPLETE');
 
       // Create activity feed entry
       await this.createActivity(
@@ -143,12 +139,10 @@ export class GamificationService {
       });
 
       // Check and award achievements
-      // const achievementsUnlocked = await achievementService.checkAndAwardAchievements(userId);
-      const achievementsUnlocked: string[] = []; // Temporarily disabled
+      const achievementsUnlocked = await achievementService.checkAndAwardAchievements(userId);
 
       // Update challenge progress
-      // await challengeService.updateChallengeProgress(userId, 'INVITE');
-      // Temporarily disabled
+      await challengeService.updateChallengeProgress(userId, 'INVITE');
 
       logger.info('Invite handled', {
         userId,
@@ -185,8 +179,7 @@ export class GamificationService {
       const streakResult = await streakService.updateLoginStreak(userId);
 
       // Update challenge progress
-      // await challengeService.updateChallengeProgress(userId, 'LOGIN');
-      // Temporarily disabled
+      await challengeService.updateChallengeProgress(userId, 'LOGIN');
 
       logger.info('Login handled', {
         userId,
@@ -247,10 +240,8 @@ export class GamificationService {
           groupsCompleted: true,
         },
       }),
-      // achievementService.getUserAchievements(userId), // Temporarily disabled
-      Promise.resolve([]),
-      // challengeService.getUserChallenges(userId), // Temporarily disabled
-      Promise.resolve([]),
+      achievementService.getUserAchievements(userId),
+      challengeService.getUserChallenges(userId),
     ]);
 
     return {

@@ -6,7 +6,17 @@ import {
 } from '../../../src/errors/GamificationError';
 import { AchievementCategory, RewardType } from '../../../src/types/gamification';
 
-jest.mock('../../../src/config/database');
+jest.mock('../../../src/config/database', () => ({
+  prisma: {
+    userGamification: { findUnique: jest.fn() },
+    contribution: { count: jest.fn() },
+    achievement: { findMany: jest.fn() },
+    userAchievement: { findMany: jest.fn(), create: jest.fn() },
+    rewardHistory: { findUnique: jest.fn(), create: jest.fn() },
+    userFollow: { count: jest.fn() },
+    $transaction: jest.fn(),
+  },
+}));
 jest.mock('../../../src/utils/logger', () => ({
   logger: {
     info: jest.fn(),

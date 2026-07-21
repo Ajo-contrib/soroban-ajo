@@ -6,7 +6,14 @@ import {
   DuplicateRewardError,
 } from '../../../src/errors/GamificationError';
 
-jest.mock('../../../src/config/database');
+jest.mock('../../../src/config/database', () => ({
+  prisma: {
+    challenge: { findMany: jest.fn(), findUnique: jest.fn() },
+    userChallenge: { upsert: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+    rewardHistory: { findUnique: jest.fn(), create: jest.fn() },
+    $transaction: jest.fn(),
+  },
+}));
 jest.mock('../../../src/utils/logger', () => ({
   logger: {
     info: jest.fn(),

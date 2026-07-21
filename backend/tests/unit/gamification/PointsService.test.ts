@@ -9,6 +9,7 @@ jest.mock('../../../src/config/database', () => ({
     pointTransaction: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      findMany: jest.fn(),
     },
     userGamification: {
       upsert: jest.fn(),

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { gamificationService } from '../services/gamification/GamificationService';
 import { socialService } from '../services/gamification/SocialService';
-// import { challengeService } from '../services/gamification/ChallengeService'; // Temporarily disabled
-// import { authenticate } from '../middleware/auth'; // Temporarily disabled
+import { challengeService } from '../services/gamification/ChallengeService';
+import { authenticate } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import {
   paginationSchema,

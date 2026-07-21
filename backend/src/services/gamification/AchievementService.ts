@@ -13,6 +13,14 @@ import {
 import { pointsService } from './PointsService';
 
 export class AchievementService {
+  /**
+   * Scans all active achievements for the user and awards any that are newly
+   * eligible.  Safe to call after any user action — already-awarded achievements
+   * are skipped via the `existingIds` set, and the rewardHistory table provides
+   * a second dedup layer inside `awardAchievement()`.
+   *
+   * @returns Array of achievement IDs that were awarded during this call.
+   */
   async checkAndAwardAchievements(userId: string): Promise<string[]> {
     const awardedIds: string[] = [];
 
@@ -49,7 +57,7 @@ export class AchievementService {
           awardedIds.push(achievement.id);
         } catch (error) {
           if (error instanceof DuplicateRewardError) {
-            // Already awarded, skip
+            // Already awarded via another code path, skip silently
             continue;
           }
           throw error;
@@ -60,6 +68,9 @@ export class AchievementService {
     return awardedIds;
   }
 
+  /**
+   * Evaluates a single achievement requirement against the user's current stats.
+   */
   private async checkRequirement(
     userId: string,
     category: AchievementCategory,
@@ -99,16 +110,21 @@ export class AchievementService {
         break;
 
       case AchievementCategory.SPECIAL:
-        // Special achievements require manual awarding
+        // Special achievements are awarded manually via awardAchievement() only
         return false;
     }
 
     return false;
   }
 
+  /**
+   * Atomically records the achievement, adds a rewardHistory entry (dedup
+   * guard), and awards the associated points.  Throws `DuplicateRewardError`
+   * if the achievement was already awarded via any code path.
+   */
   async awardAchievement(userId: string, achievementId: string): Promise<void> {
     await prisma.$transaction(async (tx: any) => {
-      // Check for duplicate
+      // Strong dedup via rewardHistory composite key
       const existing = await tx.rewardHistory.findUnique({
         where: {
           userId_rewardType_rewardId: {
@@ -131,12 +147,12 @@ export class AchievementService {
         throw new AchievementNotFoundError(achievementId);
       }
 
-      // Create user achievement
+      // Create userAchievement record
       await tx.userAchievement.create({
         data: { userId, achievementId },
       });
 
-      // Record reward
+      // Record in rewardHistory for cross-service dedup
       await tx.rewardHistory.create({
         data: {
           userId,
@@ -147,7 +163,7 @@ export class AchievementService {
         },
       });
 
-      // Award points
+      // Award points (delegated to PointsService)
       await pointsService.awardPoints(
         userId,
         achievement.points,
@@ -166,12 +182,18 @@ export class AchievementService {
     });
   }
 
+  /**
+   * Parses and schema-validates a raw requirement JSON string.
+   * Throws a Zod validation error if the JSON does not match the expected shape.
+   */
   private parseRequirement(requirementJson: string): AchievementRequirement {
     const parsed = JSON.parse(requirementJson);
-    const validated = achievementRequirementSchema.parse(parsed);
-    return validated;
+    return achievementRequirementSchema.parse(parsed) as AchievementRequirement;
   }
 
+  /**
+   * Returns all achievements the user has unlocked, ordered by most recent.
+   */
   async getUserAchievements(userId: string): Promise<
     Array<{
       id: string;
