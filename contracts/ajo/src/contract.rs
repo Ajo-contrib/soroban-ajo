@@ -1597,6 +1597,16 @@ pub fn get_refund_record(
         Ok(crate::insurance::get_group_risk_rating(&env, &group))
     }
 
+    /// Get detailed fraud risk profile for a member
+    pub fn get_member_fraud_profile(env: Env, member: Address) -> crate::types::FraudRiskProfile {
+        crate::insurance::get_member_fraud_profile(&env, &member)
+    }
+
+    /// Get detailed group risk assessment  
+    pub fn get_group_risk_assessment(env: Env, group_id: u64) -> Result<crate::types::GroupRiskAssessment, AjoError> {
+        crate::insurance::get_group_assessment(&env, group_id)
+    }
+
     // ── Dynamic payout ordering ───────────────────────────────────────────────
 
     /// Create a new Ajo group with an explicit payout ordering strategy.

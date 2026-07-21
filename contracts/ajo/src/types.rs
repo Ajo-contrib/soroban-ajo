@@ -286,6 +286,35 @@ pub const DISPUTE_VOTING_PERIOD: u64 = 604_800; // 7 days for disputes
 pub const REFUND_APPROVAL_THRESHOLD: u32 = 51;
 pub const DISPUTE_APPROVAL_THRESHOLD: u32 = 66;
 
+// ── Insurance Security Constants ───────────────────────────────────────────
+
+/// Default maximum claimable percentage per epoch (500 bps = 5%)
+pub const DEFAULT_MAX_CLAIMABLE_BPS: u32 = 500;
+
+/// Default epoch duration (7 days in seconds)
+pub const DEFAULT_EPOCH_DURATION: u64 = 604_800;
+
+/// High risk threshold for fraud detection (80/100)
+pub const HIGH_FRAUD_RISK_THRESHOLD: u32 = 80;
+
+/// Maximum claims per member per epoch
+pub const MAX_CLAIMS_PER_MEMBER_PER_EPOCH: u32 = 3;
+
+/// Self-dealing suspicion flag
+pub const FRAUD_FLAG_SELF_DEALING: u32 = 1;
+
+/// Sybil attack suspicion flag
+pub const FRAUD_FLAG_SYBIL_ATTACK: u32 = 2;
+
+/// Rate limiting violation flag
+pub const FRAUD_FLAG_RATE_LIMIT: u32 = 4;
+
+/// Manufactured default flag
+pub const FRAUD_FLAG_MANUFACTURED_DEFAULT: u32 = 8;
+
+/// Pattern analysis suspicious flag
+pub const FRAUD_FLAG_SUSPICIOUS_PATTERN: u32 = 16;
+
 /// Tracks a refund request initiated by a member.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -445,6 +474,56 @@ pub struct InsuranceClaim {
     pub status: ClaimStatus,
     /// Unix timestamp when the claim was filed.
     pub created_at: u64,
+    /// Fraud risk score (0-100, higher is more suspicious)
+    pub fraud_risk_score: u32,
+    /// Flag indicating if this claim was auto-verified
+    pub auto_verified: bool,
+    /// Additional verification flags
+    pub verification_flags: u32,
+}
+
+/// Fraud detection and risk scoring data for members
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FraudRiskProfile {
+    /// Member address
+    pub member: Address,
+    /// Base risk score (0-100, higher = more risky)
+    pub base_risk_score: u32,
+    /// Number of claims filed by this member
+    pub total_claims_filed: u32,
+    /// Number of successful claims
+    pub successful_claims: u32,
+    /// Time-weighted claim frequency score
+    pub claim_frequency_score: u32,
+    /// Pattern analysis score
+    pub pattern_analysis_score: u32,
+    /// Last claim timestamp
+    pub last_claim_timestamp: u64,
+    /// Suspicious activity flags (bitfield)
+    pub suspicious_flags: u32,
+    /// Last risk assessment timestamp
+    pub last_assessed: u64,
+}
+
+/// Group-level risk assessment data
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupRiskAssessment {
+    /// Group ID
+    pub group_id: u64,
+    /// Aggregate member risk score
+    pub aggregate_risk_score: u32,
+    /// Default rate history
+    pub default_rate: u32,
+    /// Claim rate (claims per cycle)
+    pub claim_rate: u32,
+    /// Sybil attack risk score
+    pub sybil_risk_score: u32,
+    /// Group behavior pattern flags
+    pub behavior_flags: u32,
+    /// Last assessment timestamp
+    pub last_assessed: u64,
 }
 
 /// Insurance fund balance tracking.
@@ -457,6 +536,14 @@ pub struct InsurancePool {
     pub total_payouts: i128,
     /// Total amount of claims filed.
     pub pending_claims_count: u32,
+    /// Maximum percentage of pool balance that can be claimed per epoch (basis points)
+    pub max_claimable_bps: u32,
+    /// Timestamp of last epoch reset
+    pub last_epoch_reset: u64,
+    /// Amount already claimed in current epoch
+    pub epoch_claimed_amount: i128,
+    /// Epoch duration in seconds (default: 7 days)
+    pub epoch_duration: u64,
 }
 
 /// Classification of contribution reminders sent to members.

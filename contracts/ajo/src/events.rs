@@ -291,3 +291,41 @@ pub fn emit_tier_upgraded(env: &Env, member: &Address, old_tier: u32, new_tier: 
     let topics = (symbol_short!("tierUp"),);
     env.events().publish(topics, (member, old_tier, new_tier));
 }
+
+// ── Insurance Events ──────────────────────────────────────────────────────
+
+/// Emit an event when an insurance claim is filed.
+pub fn emit_claim_filed(env: &Env, claim_id: u64, group_id: u64, cycle: u32) {
+    let topics = (symbol_short!("clmfile"), claim_id);
+    env.events().publish(topics, (group_id, cycle));
+}
+
+/// Emit an event when an insurance claim is approved and paid.
+pub fn emit_claim_approved(env: &Env, claim_id: u64, group_id: u64, claimant: &Address, amount: i128) {
+    let topics = (symbol_short!("clmappv"), claim_id);
+    env.events().publish(topics, (group_id, claimant, amount));
+}
+
+/// Emit an event when an insurance claim is rejected.
+pub fn emit_claim_rejected(env: &Env, claim_id: u64, group_id: u64) {
+    let topics = (symbol_short!("clmrej"), claim_id);
+    env.events().publish(topics, group_id);
+}
+
+/// Emit an event with claim verification results.
+pub fn emit_claim_verification_result(env: &Env, claim_id: u64, group_id: u64, verification_complete: bool, is_valid: bool) {
+    let topics = (symbol_short!("clmverif"), claim_id);
+    env.events().publish(topics, (group_id, verification_complete, is_valid));
+}
+
+/// Emit an event when pool solvency limits are triggered.
+pub fn emit_pool_solvency_limit_triggered(env: &Env, token: &Address, pool_balance: i128, claim_amount: i128, max_claimable: i128) {
+    let topics = (symbol_short!("poolsol"),);
+    env.events().publish(topics, (token, pool_balance, claim_amount, max_claimable));
+}
+
+/// Emit an event when suspicious activity is detected.
+pub fn emit_fraud_detection_alert(env: &Env, claim_id: u64, member: &Address, fraud_type: &str, risk_score: u32) {
+    let topics = (symbol_short!("fraudalt"), claim_id);
+    env.events().publish(topics, (member, fraud_type, risk_score));
+}
