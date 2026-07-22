@@ -428,7 +428,7 @@ pub fn default_member_stats(env: &Env, member: &Address) -> crate::types::Member
         on_time_contributions: 0,
         late_contributions: 0,
         qualifying_contributions: 0,
-        qualifying_on_time_contributions: 0,
+        qualifying_ontime_contribs: 0,
         qualifying_groups_completed: 0,
         qualifying_amount_contributed: 0,
         total_amount_contributed: 0,

@@ -130,7 +130,7 @@ a second, complementary layer.
 component's own existing "first tier of real activity" threshold) is the
 minimum per-cycle contribution amount for a group's participation to count
 toward score. `MemberStats` now tracks `qualifying_contributions`,
-`qualifying_on_time_contributions`, `qualifying_groups_completed`, and
+`qualifying_ontime_contribs`, `qualifying_groups_completed`, and
 `qualifying_amount_contributed` alongside the existing raw counters — only
 incremented when `contribution_amount >= MIN_REPUTATION_STAKE`
 (`contract.rs`: `contribute`, `contribute_with_token`, and the

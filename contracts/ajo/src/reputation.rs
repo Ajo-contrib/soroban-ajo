@@ -96,7 +96,7 @@ pub fn compute_credit_score(stats: &crate::types::MemberStats) -> u32 {
     }
 
     // 1. Payment reliability component (0–400)
-    let reliability = (stats.qualifying_on_time_contributions * 400) / qualifying_total;
+    let reliability = (stats.qualifying_ontime_contribs * 400) / qualifying_total;
 
     // 2. Groups completed component (0–200): cap at 10 completed groups
     let completed_capped = stats.qualifying_groups_completed.min(10);

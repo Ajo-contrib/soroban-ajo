@@ -484,7 +484,7 @@ impl AjoContract {
         // has real stake at risk per cycle (see reputation::MIN_REPUTATION_STAKE).
         if contribution_amount >= crate::reputation::MIN_REPUTATION_STAKE {
             stats.qualifying_contributions += 1;
-            stats.qualifying_on_time_contributions += 1;
+            stats.qualifying_ontime_contribs += 1;
             stats.qualifying_amount_contributed += contribution_amount;
         }
         storage::store_member_stats(&env, &member, &stats);
@@ -2180,7 +2180,7 @@ pub fn get_refund_record(
         stats.total_amount_contributed += required_amount;
         if required_amount >= crate::reputation::MIN_REPUTATION_STAKE {
             stats.qualifying_contributions += 1;
-            stats.qualifying_on_time_contributions += 1;
+            stats.qualifying_ontime_contribs += 1;
             stats.qualifying_amount_contributed += required_amount;
         }
         storage::store_member_stats(&env, &member, &stats);

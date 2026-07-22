@@ -572,7 +572,7 @@ pub struct MemberStats {
     /// count toward the credit score's reliability/completion/volume
     /// components, so cheap dust-amount groups can't inflate a score.
     pub qualifying_contributions: u32,
-    pub qualifying_on_time_contributions: u32,
+    pub qualifying_ontime_contribs: u32,
     pub qualifying_groups_completed: u32,
     pub qualifying_amount_contributed: i128,
     pub achievements: Vec<MemberAchievement>,
