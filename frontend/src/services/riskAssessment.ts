@@ -19,7 +19,7 @@ export interface RiskProfile {
 export class RiskAssessmentService {
   /**
    * Assess the risk profile for a user based on their historical data.
-   * 
+   *
    * @param userId - Unique identifier for the user
    * @returns Comprehensive risk profile
    */
@@ -42,7 +42,7 @@ export class RiskAssessmentService {
 
   /**
    * Fetch the existing risk profile for a user.
-   * 
+   *
    * @param userId - Unique identifier for the user
    * @returns The user's risk profile
    */
@@ -52,7 +52,7 @@ export class RiskAssessmentService {
 
   /**
    * Recalculate and update the risk profile for a user.
-   * 
+   *
    * @param userId - Unique identifier for the user
    * @returns Updated risk profile
    */
@@ -61,8 +61,18 @@ export class RiskAssessmentService {
   }
 
   /**
+   * Assess the aggregate risk profile for a group.
+   *
+   * @param groupId - Unique identifier for the group
+   * @returns Comprehensive risk profile for the group
+   */
+  async getGroupRiskProfile(groupId: string): Promise<RiskProfile> {
+    return this.assessRisk(groupId)
+  }
+
+  /**
    * Calculate the insurance premium for a given coverage amount.
-   * 
+   *
    * @param riskScore - The user's risk score (0-100)
    * @param coverageAmount - Desired coverage amount in XLM
    * @returns Calculated premium amount

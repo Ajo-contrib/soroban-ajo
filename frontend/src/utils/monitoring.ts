@@ -40,20 +40,20 @@ export interface PageLoadMetric {
 
 // Web Vitals thresholds (Google's recommended values)
 const THRESHOLDS = {
-  LCP:  { good: 2500, poor: 4000 },
-  FID:  { good: 100,  poor: 300 },
-  CLS:  { good: 0.1,  poor: 0.25 },
-  FCP:  { good: 1800, poor: 3000 },
-  TTFB: { good: 800,  poor: 1800 },
-  INP:  { good: 200,  poor: 500 },
+  LCP: { good: 2500, poor: 4000 },
+  FID: { good: 100, poor: 300 },
+  CLS: { good: 0.1, poor: 0.25 },
+  FCP: { good: 1800, poor: 3000 },
+  TTFB: { good: 800, poor: 1800 },
+  INP: { good: 200, poor: 500 },
 }
 
 // Performance budgets
 export const PERFORMANCE_BUDGETS = {
-  maxBundleSize: 500 * 1024,       // 500 KB
-  maxApiResponseTime: 500,          // ms
-  maxPageLoadTime: 3000,            // ms
-  maxComponentRenderTime: 16,       // ms (one frame at 60fps)
+  maxBundleSize: 500 * 1024, // 500 KB
+  maxApiResponseTime: 500, // ms
+  maxPageLoadTime: 3000, // ms
+  maxComponentRenderTime: 16, // ms (one frame at 60fps)
 }
 
 function getRating(name: keyof typeof THRESHOLDS, value: number): WebVitalsMetric['rating'] {
@@ -66,16 +66,20 @@ function getRating(name: keyof typeof THRESHOLDS, value: number): WebVitalsMetri
 function sendToBackend(type: string, data: unknown) {
   if (typeof window === 'undefined') return
   // Use sendBeacon for reliability during page unload
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+  const endpoint = `${apiUrl}/analytics/metric`
   const payload = JSON.stringify({ type, data, source: 'frontend-monitoring' })
   if (navigator.sendBeacon) {
-    navigator.sendBeacon('/api/analytics', new Blob([payload], { type: 'application/json' }))
+    navigator.sendBeacon(endpoint, new Blob([payload], { type: 'application/json' }))
   } else {
-    fetch('/api/analytics', {
+    fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: payload,
       keepalive: true,
-    }).catch(() => {/* silent */})
+    }).catch(() => {
+      /* silent */
+    })
   }
 }
 
@@ -88,7 +92,7 @@ function logBudgetViolation(metric: string, value: number, budget: number) {
 /**
  * Observe Core Web Vitals using the PerformanceObserver API.
  * Reports results to the monitoring backend and optional callback.
- * 
+ *
  * @param onMetric - Optional callback for Each metric reported
  */
 export function observeWebVitals(onMetric?: (metric: WebVitalsMetric) => void) {
@@ -116,7 +120,9 @@ export function observeWebVitals(onMetric?: (metric: WebVitalsMetric) => void) {
       const last = entries[entries.length - 1] as PerformanceEntry & { startTime: number }
       report('LCP', last.startTime)
     }).observe({ type: 'largest-contentful-paint', buffered: true })
-  } catch { /* not supported */ }
+  } catch {
+    /* not supported */
+  }
 
   // FID
   try {
@@ -126,7 +132,9 @@ export function observeWebVitals(onMetric?: (metric: WebVitalsMetric) => void) {
         report('FID', e.processingStart - e.startTime)
       }
     }).observe({ type: 'first-input', buffered: true })
-  } catch { /* not supported */ }
+  } catch {
+    /* not supported */
+  }
 
   // CLS
   try {
@@ -138,7 +146,9 @@ export function observeWebVitals(onMetric?: (metric: WebVitalsMetric) => void) {
       }
       report('CLS', clsValue)
     }).observe({ type: 'layout-shift', buffered: true })
-  } catch { /* not supported */ }
+  } catch {
+    /* not supported */
+  }
 
   // FCP
   try {
@@ -149,7 +159,9 @@ export function observeWebVitals(onMetric?: (metric: WebVitalsMetric) => void) {
         }
       }
     }).observe({ type: 'paint', buffered: true })
-  } catch { /* not supported */ }
+  } catch {
+    /* not supported */
+  }
 
   // TTFB via navigation timing
   try {
@@ -159,7 +171,9 @@ export function observeWebVitals(onMetric?: (metric: WebVitalsMetric) => void) {
         report('TTFB', nav.responseStart - nav.requestStart)
       }
     }).observe({ type: 'navigation', buffered: true })
-  } catch { /* not supported */ }
+  } catch {
+    /* not supported */
+  }
 
   // INP (Interaction to Next Paint)
   try {
@@ -169,12 +183,14 @@ export function observeWebVitals(onMetric?: (metric: WebVitalsMetric) => void) {
         report('INP', e.duration)
       }
     }).observe({ type: 'event', buffered: true, durationThreshold: 40 } as PerformanceObserverInit)
-  } catch { /* not supported */ }
+  } catch {
+    /* not supported */
+  }
 }
 
 /**
  * Measure overall page load timing from the Navigation Timing API.
- * 
+ *
  * @returns PageLoadMetric or null if unavailable
  */
 export function measurePageLoad(): PageLoadMetric | null {
@@ -203,7 +219,7 @@ export function measurePageLoad(): PageLoadMetric | null {
 /**
  * Start measuring a component's render time.
  * Returns an 'end' function to be called after render completes.
- * 
+ *
  * @param componentName - Identifier for the component
  * @returns End function to finalize measurement
  */
@@ -214,7 +230,11 @@ export function startComponentMeasure(componentName: string): () => void {
     const metric: ComponentRenderMetric = { componentName, renderTime, timestamp: Date.now() }
 
     if (renderTime > PERFORMANCE_BUDGETS.maxComponentRenderTime) {
-      logBudgetViolation(`${componentName} render`, renderTime, PERFORMANCE_BUDGETS.maxComponentRenderTime)
+      logBudgetViolation(
+        `${componentName} render`,
+        renderTime,
+        PERFORMANCE_BUDGETS.maxComponentRenderTime
+      )
     }
 
     sendToBackend('component_render', metric)
@@ -223,15 +243,12 @@ export function startComponentMeasure(componentName: string): () => void {
 
 /**
  * Measure the execution time of an asynchronous operation (e.g., API call).
- * 
+ *
  * @param name - Label for the operation
  * @param fn - The async function to execute
  * @returns Result of the function
  */
-export async function measureAsync<T>(
-  name: string,
-  fn: () => Promise<T>,
-): Promise<T> {
+export async function measureAsync<T>(name: string, fn: () => Promise<T>): Promise<T> {
   const start = performance.now()
   try {
     const result = await fn()
@@ -272,5 +289,7 @@ export function observeResourceTiming() {
         }
       }
     }).observe({ type: 'resource', buffered: true })
-  } catch { /* not supported */ }
+  } catch {
+    /* not supported */
+  }
 }

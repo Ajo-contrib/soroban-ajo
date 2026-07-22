@@ -64,7 +64,7 @@ export const viewport: Viewport = {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // This is the only layout allowed to render <html>/<body> — every real
+  // This is the only layout allowed to render <html suppressHydrationWarning>/<body> — every real
   // request is redirected by middleware to a /[locale]/* path, and
   // src/app/[locale]/layout.tsx (nested inside this one) owns the actual
   // app shell (providers, sidebar/nav, etc.). Duplicating <html>/<body> or
