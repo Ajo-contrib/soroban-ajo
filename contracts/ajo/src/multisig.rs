@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Env, Vec, Symbol, symbol_short};
+use soroban_sdk::{contracttype, Address, Env, Vec, Symbol, symbol_short, IntoVal};
 
 /// On-chain multi-sig proposal for critical admin actions.
 #[contracttype]

@@ -625,6 +625,30 @@ pub fn store_insurance_pool(env: &Env, token: &Address, pool: &crate::types::Ins
     env.storage().instance().set(&key, pool);
 }
 
+/// Gets the fraud risk profile for a member
+pub fn get_fraud_risk_profile(env: &Env, member: &Address) -> Option<crate::types::FraudRiskProfile> {
+    let key = (symbol_short!("FRDPROF"), member);
+    env.storage().instance().get(&key)
+}
+
+/// Stores the fraud risk profile for a member
+pub fn store_fraud_risk_profile(env: &Env, member: &Address, profile: &crate::types::FraudRiskProfile) {
+    let key = (symbol_short!("FRDPROF"), member);
+    env.storage().instance().set(&key, profile);
+}
+
+/// Gets the group risk assessment
+pub fn get_group_risk_assessment(env: &Env, group_id: u64) -> Option<crate::types::GroupRiskAssessment> {
+    let key = (symbol_short!("GRPRISK"), group_id);
+    env.storage().instance().get(&key)
+}
+
+/// Stores the group risk assessment
+pub fn store_group_risk_assessment(env: &Env, group_id: u64, assessment: &crate::types::GroupRiskAssessment) {
+    let key = (symbol_short!("GRPRISK"), group_id);
+    env.storage().instance().set(&key, assessment);
+}
+
 /// Retrieves the insurance pool for a token.
 pub fn get_insurance_pool(env: &Env, token: &Address) -> Option<crate::types::InsurancePool> {
     let key = (symbol_short!("INSPOOL"), token);
