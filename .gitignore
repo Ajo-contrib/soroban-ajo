@@ -1,7 +1,6 @@
 # Rust
 target/
 target_local/
-Cargo.lock
 **/*.rs.bk
 *.pdb
 
@@ -9,6 +8,11 @@ Cargo.lock
 .soroban/
 *.wasm
 *.optimized.wasm
+
+# soroban-sdk testutils dumps one JSON snapshot of ledger state per test on
+# Env drop (contracts/ajo/tests/**) - nothing reads these back, so they're
+# pure write noise that changes on every test run.
+contracts/ajo/test_snapshots/
 
 # Environment
 .env

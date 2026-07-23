@@ -38,23 +38,23 @@ fn generate_addresses(env: &Env, count: usize) -> Vec<Address> {
 fn test_security_unauthorized_pause() {
     let (env, client, _admin, _token) = setup_test_env();
     let attacker = Address::generate(&env);
-    
+
     // Attacker tries to pause without being admin
-    let result = client.try_pause();
-    assert_eq!(result, Err(Ok(AjoError::UnauthorizedPause)));
+    let result = client.try_pause(&attacker);
+    assert_eq!(result, Err(Ok(AjoError::Unauthorized)));
 }
 
 #[test]
 fn test_security_unauthorized_unpause() {
     let (env, client, admin, _token) = setup_test_env();
-    
+
     // Admin pauses
-    client.pause();
-    
+    client.pause(&admin);
+
     // Attacker tries to unpause
     let attacker = Address::generate(&env);
-    let result = client.try_unpause();
-    assert_eq!(result, Err(Ok(AjoError::UnauthorizedUnpause)));
+    let result = client.try_unpause(&attacker);
+    assert_eq!(result, Err(Ok(AjoError::Unauthorized)));
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn test_security_unauthorized_upgrade() {
     let wasm_hash = soroban_sdk::BytesN::from_array(&env, &fake_wasm);
     
     // Attacker tries to upgrade
-    let result = client.try_upgrade(&wasm_hash, &1u32);
+    let result = client.try_upgrade(&attacker, &wasm_hash, &1u32);
     assert_eq!(result, Err(Ok(AjoError::Unauthorized)));
 }
 
@@ -320,6 +320,9 @@ fn test_security_join_full_group() {
 #[test]
 fn test_security_large_group_operations() {
     let (env, client, _admin, token) = setup_test_env();
+    // 50 members joining/contributing in one Env is more sequential invocations
+    // than the default single-transaction resource budget allows.
+    env.budget().reset_unlimited();
     let members = generate_addresses(&env, 50);
 
     // Create group with 50 members
@@ -351,11 +354,11 @@ fn test_security_large_group_operations() {
 
 #[test]
 fn test_security_pause_blocks_create_group() {
-    let (env, client, _admin, token) = setup_test_env();
+    let (env, client, admin, token) = setup_test_env();
     let creator = Address::generate(&env);
 
     // Pause contract
-    client.pause();
+    client.pause(&admin);
 
     // Try to create group
     let result = client.try_create_group(&creator, &token, &100_000_000i128, &604_800u64, &5u32, &86400u64, &5u32, &0u32);
@@ -364,14 +367,14 @@ fn test_security_pause_blocks_create_group() {
 
 #[test]
 fn test_security_pause_blocks_join_group() {
-    let (env, client, _admin, token) = setup_test_env();
+    let (env, client, admin, token) = setup_test_env();
     let members = generate_addresses(&env, 2);
 
     // Create group before pause
     let group_id = client.create_group(&members[0], &token, &100_000_000i128, &604_800u64, &5u32, &86400u64, &5u32, &0u32);
 
     // Pause contract
-    client.pause();
+    client.pause(&admin);
 
     // Try to join
     let result = client.try_join_group(&members[1], &group_id);
@@ -380,14 +383,14 @@ fn test_security_pause_blocks_join_group() {
 
 #[test]
 fn test_security_pause_blocks_contribute() {
-    let (env, client, _admin, token) = setup_test_env();
+    let (env, client, admin, token) = setup_test_env();
     let creator = Address::generate(&env);
 
     // Create group before pause
     let group_id = client.create_group(&creator, &token, &100_000_000i128, &604_800u64, &5u32, &86400u64, &5u32, &0u32);
 
     // Pause contract
-    client.pause();
+    client.pause(&admin);
 
     // Try to contribute (ContractPaused checked before token transfer)
     let result = client.try_contribute(&creator, &group_id);
@@ -396,7 +399,7 @@ fn test_security_pause_blocks_contribute() {
 
 #[test]
 fn test_security_pause_blocks_payout() {
-    let (env, client, _admin, token) = setup_test_env();
+    let (env, client, admin, token) = setup_test_env();
     let members = generate_addresses(&env, 2);
 
     let group_id = client.create_group(&members[0], &token, &100_000_000i128, &604_800u64, &2u32, &86400u64, &5u32, &0u32);
@@ -410,7 +413,7 @@ fn test_security_pause_blocks_payout() {
     client.contribute(&members[1], &group_id);
 
     // Pause contract
-    client.pause();
+    client.pause(&admin);
 
     // Try to execute payout (ContractPaused checked first)
     let result = client.try_execute_payout(&group_id);
@@ -419,14 +422,14 @@ fn test_security_pause_blocks_payout() {
 
 #[test]
 fn test_security_pause_allows_queries() {
-    let (env, client, _admin, token) = setup_test_env();
+    let (env, client, admin, token) = setup_test_env();
     let creator = Address::generate(&env);
 
     // Create group before pause
     let group_id = client.create_group(&creator, &token, &100_000_000i128, &604_800u64, &5u32, &86400u64, &5u32, &0u32);
 
     // Pause contract
-    client.pause();
+    client.pause(&admin);
     
     // Queries should still work
     let group = client.get_group(&group_id);
@@ -441,20 +444,20 @@ fn test_security_pause_allows_queries() {
 
 #[test]
 fn test_security_unpause_restores_functionality() {
-    let (env, client, _admin, token) = setup_test_env();
+    let (env, client, admin, token) = setup_test_env();
     let members = generate_addresses(&env, 2);
 
     let group_id = client.create_group(&members[0], &token, &100_000_000i128, &604_800u64, &5u32, &86400u64, &5u32, &0u32);
 
     // Pause
-    client.pause();
+    client.pause(&admin);
     
     // Verify paused
     let result = client.try_join_group(&members[1], &group_id);
     assert_eq!(result, Err(Ok(AjoError::ContractPaused)));
     
     // Unpause
-    client.unpause();
+    client.unpause(&admin);
     
     // Should work now
     client.join_group(&members[1], &group_id);
@@ -522,7 +525,7 @@ fn test_security_metadata_unauthorized_update() {
     let desc = soroban_sdk::String::from_str(&env, "Description");
     let rules = soroban_sdk::String::from_str(&env, "Rules");
     
-    let result = client.try_set_group_metadata(&group_id, &name, &desc, &rules);
+    let result = client.try_set_group_metadata(&members[1], &group_id, &name, &desc, &rules);
     assert_eq!(result, Err(Ok(AjoError::Unauthorized)));
 }
 
