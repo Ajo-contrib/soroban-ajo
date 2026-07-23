@@ -279,9 +279,15 @@ fn test_execute_rejected_refund() {
         li.timestamp = li.timestamp + 604_800 + 1;
     });
 
-    // Try to execute refund - should fail
-    let result = client.try_execute_refund(&creator, &group_id);
-    assert_eq!(result, Err(Ok(AjoError::RefundNotApproved)));
+    // A rejected vote is a final outcome, not an error - it succeeds and
+    // records the rejection so a new refund request can be raised later.
+    client.execute_refund(&creator, &group_id);
+    let request = client.get_refund_request(&group_id);
+    assert!(request.executed);
+    assert!(!request.approved);
+
+    let group = client.get_group(&group_id);
+    assert_eq!(group.state, soroban_ajo::GroupState::Active);
 }
 
 #[test]
