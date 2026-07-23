@@ -1258,9 +1258,15 @@ impl AjoContract {
             return Err(AjoError::CycleNotExpired);
         }
 
-        // Check if refund request already exists
-        if storage::has_refund_request(&env, group_id) {
-            return Err(AjoError::RefundRequestExists);
+        // Check if a refund request is already pending. A previous request
+        // that already ran its vote to completion (rejected for lack of
+        // approval or quorum) doesn't block a new one - otherwise a single
+        // failed vote would permanently prevent the group from ever
+        // requesting a refund again.
+        if let Some(existing) = storage::get_refund_request(&env, group_id) {
+            if !existing.executed {
+                return Err(AjoError::RefundRequestExists);
+            }
         }
 
         // Create refund request
@@ -1361,8 +1367,9 @@ impl AjoContract {
     /// Execute a refund after voting period ends.
     ///
     /// Can be called by any member after the voting period ends. If the refund
-    /// is approved (>51% votes in favor), all members receive token refunds
-    /// based on their contributions.
+    /// reaches quorum (at least half the group's members voted) and clears the
+    /// approval threshold (>51% of votes cast in favor), all members receive
+    /// token refunds based on their contributions.
     ///
     /// # Arguments
     /// * `env` - The Soroban contract environment
@@ -1370,13 +1377,14 @@ impl AjoContract {
     /// * `group_id` - The unique group identifier
     ///
     /// # Returns
-    /// `Ok(())` on successful execution and token refunds
+    /// `Ok(())` whether the refund was approved or not - a request that fails
+    /// quorum or approval is a normal, final outcome, not an error. Check
+    /// `get_refund_request(group_id).approved` to see which happened.
     ///
     /// # Errors
     /// * `GroupNotFound` - If the group doesn't exist
     /// * `NoRefundRequest` - If no refund request exists
     /// * `VotingPeriodActive` - If the voting period hasn't ended
-    /// * `RefundNotApproved` - If the refund wasn't approved
     /// * `RefundAlreadyExecuted` - If the refund has already been executed
     /// * `InsufficientContractBalance` - If any token refund transfer fails
     pub fn execute_refund(env: Env, executor: Address, group_id: u64) -> Result<(), AjoError> {
@@ -1398,20 +1406,31 @@ impl AjoContract {
             return Err(AjoError::VotingPeriodActive);
         }
 
-        // Calculate approval percentage
+        // Quorum: at least half the current membership must have voted.
+        // Without this, a single member (even just the requester voting for
+        // their own request) could unilaterally force a group refund/
+        // cancellation the moment the voting window closes, regardless of
+        // what the rest of the group wants.
         let total_votes = request.votes_for + request.votes_against;
+        let member_count = group.members.len();
+        let has_quorum = total_votes.saturating_mul(2) >= member_count;
+
         let approval_percentage = if total_votes > 0 {
             (request.votes_for * 100) / total_votes
         } else {
             0
         };
+        let approved = has_quorum && approval_percentage >= crate::types::REFUND_APPROVAL_THRESHOLD;
 
-        // Check if approved
-        if approval_percentage < crate::types::REFUND_APPROVAL_THRESHOLD {
+        if !approved {
+            // A rejected vote is a final, valid outcome - persist it (this
+            // call still returns `Ok`, not an error) so it's readable as
+            // history, and `request_refund` already treats any `executed`
+            // request as resolved rather than blocking a new one.
             request.executed = true;
             request.approved = false;
             storage::store_refund_request(&env, group_id, &request);
-            return Err(AjoError::RefundNotApproved);
+            return Ok(());
         }
 
         // ═══════════════════════════════════════════════════════════════════════════
@@ -2460,13 +2479,15 @@ pub fn get_refund_record(
 
     /// File a dispute against a member in a group.
     ///
-    /// Both complainant and defendant must be members of the group.
+    /// Both complainant and defendant must be members of the group, and must
+    /// be different members - a member cannot dispute themselves.
     ///
     /// # Errors
     /// * `GroupNotFound` – group doesn't exist
     /// * `GroupCancelled` – group has been cancelled
     /// * `GroupComplete` – group has finished all cycles
     /// * `NotMember` – complainant or defendant is not a member
+    /// * `Unauthorized` – complainant and defendant are the same address
     pub fn file_dispute(
         env: Env,
         complainant: Address,
@@ -2494,6 +2515,14 @@ pub fn get_refund_record(
         }
         if !utils::is_member(&group.members, &defendant) {
             return Err(AjoError::NotMember);
+        }
+        // A self-filed dispute would let a member vote it through solo (see
+        // the defendant-cannot-vote check in `vote_on_dispute`) and collect
+        // whatever the proposed resolution grants the complainant - reusing
+        // `Unauthorized` here since the error enum is at Soroban's 50-case
+        // spec limit (see the doc comment on `AjoError`).
+        if complainant == defendant {
+            return Err(AjoError::Unauthorized);
         }
 
         let now = utils::get_current_timestamp(&env);
@@ -2536,6 +2565,7 @@ pub fn get_refund_record(
     /// * `DisputeNotFound` – dispute doesn't exist
     /// * `DisputeAlreadyResolved` – dispute is already resolved
     /// * `NotMember` – voter is not a member of the group
+    /// * `Unauthorized` – voter is the dispute's defendant
     /// * `AlreadyVotedOnDispute` – voter has already voted
     /// * `VotingPeriodEnded` – voting period has ended
     pub fn vote_on_dispute(
@@ -2559,6 +2589,11 @@ pub fn get_refund_record(
         let group = storage::get_group(&env, dispute.group_id).ok_or(AjoError::GroupNotFound)?;
         if !utils::is_member(&group.members, &voter) {
             return Err(AjoError::NotMember);
+        }
+        // The defendant can't vote on their own case - reuses `Unauthorized`
+        // for the same 50-case-limit reason noted on `file_dispute`.
+        if voter == dispute.defendant {
+            return Err(AjoError::Unauthorized);
         }
 
         if storage::has_voted_on_dispute(&env, dispute_id, &voter) {
@@ -2593,8 +2628,11 @@ pub fn get_refund_record(
 
     /// Resolve a dispute after the voting period ends.
     ///
-    /// If ≥66% of votes support the action, the proposed resolution is applied.
-    /// Otherwise the dispute is rejected.
+    /// Requires quorum - at least half of the members eligible to vote (every
+    /// member except the defendant) must have voted - and, among votes cast,
+    /// ≥66% support for the action. Otherwise the dispute is rejected. Either
+    /// outcome is final and returns `Ok`; there is no state where a dispute
+    /// past its deadline is left unresolved.
     ///
     /// # Errors
     /// * `DisputeNotFound` – dispute doesn't exist
@@ -2622,8 +2660,22 @@ pub fn get_refund_record(
             return Err(AjoError::VotingPeriodActive);
         }
 
+        // Quorum is measured against members eligible to vote right now (the
+        // defendant is excluded from both the count and the vote itself), so
+        // a dispute can't be forced through by a lone voter regardless of
+        // group size - without this, resolving with a single "for" vote and
+        // no "against" always clears the 66% approval threshold on its own.
+        let group = storage::get_group(&env, dispute.group_id).ok_or(AjoError::GroupNotFound)?;
+        let eligible_voters = group
+            .members
+            .iter()
+            .filter(|m| *m != dispute.defendant)
+            .count() as u32;
+
         let total_votes = dispute.votes_for_action + dispute.votes_against_action;
-        let approved = total_votes > 0
+        let has_quorum = total_votes.saturating_mul(2) >= eligible_voters;
+        let approved = has_quorum
+            && total_votes > 0
             && (dispute.votes_for_action * 100 / total_votes)
                 >= crate::types::DISPUTE_APPROVAL_THRESHOLD;
 
