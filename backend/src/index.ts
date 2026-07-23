@@ -48,6 +48,7 @@ import { versionsRouter } from './routes/versions'
 import { ipBlocklist, ddosProtection } from './middleware/ddosProtection'
 import { requestThrottle } from './middleware/requestThrottle'
 import { apiVersionMiddleware } from './middleware/apiVersion'
+import { setupGraphQL } from './graphql/server'
 
 dotenv.config()
 
@@ -134,69 +135,84 @@ app.use('/api/webhooks/payments', paymentWebhooksRouter)
 import { e2eRouter } from './routes/e2e'
 app.use('/api/e2e', strictLimiter, e2eRouter)
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Not found'
-  })
-})
+// Apollo Server's middleware can only be mounted after `server.start()`
+// resolves, so everything that must come after routing (the 404 catch-all,
+// error handlers, and listen()) waits on GraphQL setup finishing first —
+// otherwise /graphql would fall through to the 404 handler.
+async function bootstrap() {
+  await setupGraphQL(app)
 
-// Error handling
-app.use(errorLoggingMiddleware)
-app.use(errorHandler)
-
-// Start server and keep reference so we can close it on shutdown
-const server = createServer(app)
-
-// Initialize Socket.IO (chat + notifications)
-chatService.init(server)
-websocketService.init(chatService.getIO())
-
-server.listen(PORT, () => {
-  logger.info(`Server started on port ${PORT}`, { env: process.env.NODE_ENV || 'development' })
-
-  // Start background job workers and cron scheduler
-  try {
-    startWorkers()
-    startScheduler()
-    logger.info('Background jobs and cron scheduler started')
-  } catch (err) {
-    logger.error('Failed to start background jobs', {
-      error: err instanceof Error ? err.message : String(err),
-    })
-  }
-
-  // Resume/roll back any saga a previous process left mid-flight — this is
-  // what makes saga state crash-recoverable rather than just in-memory.
-  recoverIncompleteSagas().catch((err) => {
-    logger.error('Saga recovery pass failed at startup', {
-      error: err instanceof Error ? err.message : String(err),
+  // 404 handler
+  app.use((req, res) => {
+    res.status(404).json({
+      success: false,
+      error: 'Not found'
     })
   })
-})
 
-// Graceful shutdown
-const shutdown = async () => {
-  logger.info('Shutting down gracefully...')
-  // stop accepting new connections
-  if (server && server.close) {
-    server.close((err?: Error) => {
-      if (err) {
-        logger.error('Error closing server', { error: err.message })
-      } else {
-        logger.info('HTTP server closed')
-      }
+  // Error handling
+  app.use(errorLoggingMiddleware)
+  app.use(errorHandler)
+
+  // Start server and keep reference so we can close it on shutdown
+  const server = createServer(app)
+
+  // Initialize Socket.IO (chat + notifications)
+  chatService.init(server)
+  websocketService.init(chatService.getIO())
+
+  server.listen(PORT, () => {
+    logger.info(`Server started on port ${PORT}`, { env: process.env.NODE_ENV || 'development' })
+
+    // Start background job workers and cron scheduler
+    try {
+      startWorkers()
+      startScheduler()
+      logger.info('Background jobs and cron scheduler started')
+    } catch (err) {
+      logger.error('Failed to start background jobs', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+
+    // Resume/roll back any saga a previous process left mid-flight — this is
+    // what makes saga state crash-recoverable rather than just in-memory.
+    recoverIncompleteSagas().catch((err) => {
+      logger.error('Saga recovery pass failed at startup', {
+        error: err instanceof Error ? err.message : String(err),
+      })
     })
+  })
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    logger.info('Shutting down gracefully...')
+    // stop accepting new connections
+    if (server && server.close) {
+      server.close((err?: Error) => {
+        if (err) {
+          logger.error('Error closing server', { error: err.message })
+        } else {
+          logger.info('HTTP server closed')
+        }
+      })
+    }
+
+    stopScheduler()
+    await stopWorkers()
+    // give a short delay in case there are pending callbacks
+    setTimeout(() => process.exit(0), 100)
   }
 
-  stopScheduler()
-  await stopWorkers()
-  // give a short delay in case there are pending callbacks
-  setTimeout(() => process.exit(0), 100)
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
 }
 
-process.on('SIGTERM', shutdown)
-process.on('SIGINT', shutdown)
+bootstrap().catch((err) => {
+  logger.error('Failed to bootstrap server', {
+    error: err instanceof Error ? err.message : String(err),
+  })
+  process.exit(1)
+})
 
 export default app

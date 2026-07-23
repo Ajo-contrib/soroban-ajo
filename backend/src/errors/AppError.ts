@@ -30,6 +30,16 @@ export class AppError extends Error {
       ...(this.details && { details: this.details }),
     }
   }
+
+  /**
+   * graphql-js reads `originalError.extensions` when it wraps a thrown error
+   * (see locatedError/GraphQLError), so this alone is enough for AppError
+   * subclasses thrown from a resolver to surface the right GraphQL error
+   * `code`/status without any GraphQL-specific import in this file.
+   */
+  get extensions(): Record<string, unknown> {
+    return { code: this.code, http: { status: this.statusCode } }
+  }
 }
 
 /**
