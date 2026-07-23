@@ -18,6 +18,12 @@ fn setup_test_env() -> (Env, AjoContractClient<'static>, Address, Address, Addre
     let token_admin = Address::generate(&env);
     let token = env.register_stellar_asset_contract(token_admin);
 
+    // Fund every generated member so `contribute()` calls in tests have balance to transfer.
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token);
+    for member in [&creator, &member2, &member3] {
+        token_admin_client.mint(member, &1_000_000_000i128);
+    }
+
     (env, client, creator, member2, member3, token)
 }
 

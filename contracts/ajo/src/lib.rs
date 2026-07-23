@@ -23,8 +23,6 @@ mod token;
 mod types;
 mod utils;
 mod insurance;
-mod loan;
-mod emergency;
 pub mod multisig;
 
 pub use contract::AjoContract;

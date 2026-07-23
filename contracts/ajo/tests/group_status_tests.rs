@@ -19,6 +19,12 @@ fn setup_test_env() -> (Env, AjoContractClient<'static>, Address, Address, Addre
     let token_admin = Address::generate(&env);
     let token = env.register_stellar_asset_contract(token_admin);
 
+    // Fund every generated member so `contribute()` calls in tests have balance to transfer.
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token);
+    for member in [&creator, &member2, &member3] {
+        token_admin_client.mint(member, &1_000_000_000i128);
+    }
+
     (env, client, creator, member2, member3, token)
 }
 
@@ -273,10 +279,12 @@ fn test_group_status_large_group() {
     let group_id = client.create_group(&creator, &token, &100_000_000i128, &604_800u64, &max_members, &86400u64, &5u32, &0u32);
 
     // Add more members
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token);
     let mut members = vec![creator.clone()];
     for _ in 1..5 {
         let member = Address::generate(&env);
         client.join_group(&member, &group_id);
+        token_admin_client.mint(&member, &1_000_000_000i128);
         members.push(member);
     }
 
@@ -403,10 +411,12 @@ fn test_group_status_no_overflow_with_many_contributions() {
     let group_id = client.create_group(&creator, &token, &100_000_000i128, &604_800u64, &10u32, &86400u64, &5u32, &0u32);
 
     // Add several members
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token);
     let mut members = vec![creator.clone()];
     for _ in 1..8 {
         let member = Address::generate(&env);
         client.join_group(&member, &group_id);
+        token_admin_client.mint(&member, &1_000_000_000i128);
         members.push(member);
     }
 

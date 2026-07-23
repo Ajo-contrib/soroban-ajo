@@ -8,11 +8,12 @@ use soroban_sdk::{
     BytesN, Env, String as SorobanString,
 };
 
-fn setup(env: &Env) -> (AjoContractClient<'static>, soroban_sdk::Address) {
+fn setup(env: &Env) -> (AjoContractClient<'static>, soroban_sdk::Address, soroban_sdk::Address) {
     let contract_id = env.register_contract(None, AjoContract);
     let client = AjoContractClient::new(env, &contract_id);
     let creator = soroban_sdk::Address::generate(env);
-    (client, creator)
+    let token = soroban_sdk::Address::generate(env);
+    (client, creator, token)
 }
 
 fn evidence(env: &Env) -> BytesN<32> {
@@ -23,10 +24,10 @@ fn evidence(env: &Env) -> BytesN<32> {
 fn test_file_dispute() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, creator) = setup(&env);
+    let (client, creator, token) = setup(&env);
     let defendant = soroban_sdk::Address::generate(&env);
 
-    let group_id = client.create_group(&creator, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32);
+    let group_id = client.create_group(&creator, &token, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32, &0u32);
     client.join_group(&defendant, &group_id);
 
     let dispute_id = client.file_dispute(
@@ -50,10 +51,10 @@ fn test_file_dispute() {
 fn test_file_dispute_not_member() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, creator) = setup(&env);
+    let (client, creator, token) = setup(&env);
     let defendant = soroban_sdk::Address::generate(&env); // not joined
 
-    let group_id = client.create_group(&creator, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32);
+    let group_id = client.create_group(&creator, &token, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32, &0u32);
 
     client.file_dispute(
         &creator,
@@ -70,11 +71,11 @@ fn test_file_dispute_not_member() {
 fn test_vote_on_dispute() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, creator) = setup(&env);
+    let (client, creator, token) = setup(&env);
     let member1 = soroban_sdk::Address::generate(&env);
     let member2 = soroban_sdk::Address::generate(&env);
 
-    let group_id = client.create_group(&creator, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32);
+    let group_id = client.create_group(&creator, &token, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32, &0u32);
     client.join_group(&member1, &group_id);
     client.join_group(&member2, &group_id);
 
@@ -100,10 +101,10 @@ fn test_vote_on_dispute() {
 fn test_cannot_vote_twice_on_dispute() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, creator) = setup(&env);
+    let (client, creator, token) = setup(&env);
     let voter = soroban_sdk::Address::generate(&env);
 
-    let group_id = client.create_group(&creator, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32);
+    let group_id = client.create_group(&creator, &token, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32, &0u32);
     client.join_group(&voter, &group_id);
 
     let dispute_id = client.file_dispute(
@@ -124,11 +125,11 @@ fn test_cannot_vote_twice_on_dispute() {
 fn test_resolve_dispute_approved() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, creator) = setup(&env);
+    let (client, creator, token) = setup(&env);
     let member1 = soroban_sdk::Address::generate(&env);
     let member2 = soroban_sdk::Address::generate(&env);
 
-    let group_id = client.create_group(&creator, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32);
+    let group_id = client.create_group(&creator, &token, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32, &0u32);
     client.join_group(&member1, &group_id);
     client.join_group(&member2, &group_id);
 
@@ -153,7 +154,7 @@ fn test_resolve_dispute_approved() {
 
     let dispute = client.get_dispute(&dispute_id);
     assert_eq!(dispute.status, DisputeStatus::Resolved);
-    assert_eq!(dispute.final_resolution, Some(DisputeResolution::Penalty));
+    assert_eq!(dispute.final_resolution, DisputeResolution::Penalty);
 }
 
 #[test]
@@ -161,10 +162,10 @@ fn test_resolve_dispute_approved() {
 fn test_resolve_too_early() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, creator) = setup(&env);
+    let (client, creator, token) = setup(&env);
     let defendant = soroban_sdk::Address::generate(&env);
 
-    let group_id = client.create_group(&creator, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32);
+    let group_id = client.create_group(&creator, &token, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32, &0u32);
     client.join_group(&defendant, &group_id);
 
     let dispute_id = client.file_dispute(
@@ -184,10 +185,10 @@ fn test_resolve_too_early() {
 fn test_removal_resolution() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, creator) = setup(&env);
+    let (client, creator, token) = setup(&env);
     let defendant = soroban_sdk::Address::generate(&env);
 
-    let group_id = client.create_group(&creator, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32);
+    let group_id = client.create_group(&creator, &token, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32, &0u32);
     client.join_group(&defendant, &group_id);
 
     let dispute_id = client.file_dispute(
@@ -213,10 +214,10 @@ fn test_removal_resolution() {
 fn test_get_group_disputes() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, creator) = setup(&env);
+    let (client, creator, token) = setup(&env);
     let defendant = soroban_sdk::Address::generate(&env);
 
-    let group_id = client.create_group(&creator, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32);
+    let group_id = client.create_group(&creator, &token, &10_000_000i128, &86400u64, &10u32, &86400u64, &5u32, &0u32);
     client.join_group(&defendant, &group_id);
 
     client.file_dispute(

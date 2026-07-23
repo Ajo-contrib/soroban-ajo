@@ -62,7 +62,7 @@ fn test_contribute_with_token_transfer() {
     client.join_group(&member2, &group_id);
 
     // Get contract address
-    let contract_address = env.current_contract_address();
+    let contract_address = client.address.clone();
 
     // Check initial balances
     let creator_balance_before = token_client.balance(&creator);
@@ -118,7 +118,7 @@ fn test_payout_with_token_transfer() {
     client.contribute(&member2, &group_id);
 
     // Get contract address
-    let contract_address = env.current_contract_address();
+    let contract_address = client.address.clone();
 
     // Check balances before payout
     let creator_balance_before = token_client.balance(&creator);
@@ -354,7 +354,7 @@ fn test_get_contract_balance() {
 }
 
 #[test]
-#[should_panic(expected = "InsufficientBalance")]
+#[should_panic(expected = "Error(Contract, #12)")]
 fn test_contribute_insufficient_balance() {
     let (env, client, token_id, _token_client, token_admin_client) = setup_test_env_with_token();
 
@@ -382,7 +382,7 @@ fn test_contribute_insufficient_balance() {
 }
 
 #[test]
-#[should_panic(expected = "InsufficientContractBalance")]
+#[should_panic(expected = "Error(Contract, #39)")]
 fn test_payout_insufficient_contract_balance() {
     let (env, client, token_id, token_client, token_admin_client) = setup_test_env_with_token();
 
@@ -410,16 +410,16 @@ fn test_payout_insufficient_contract_balance() {
     // Join group
     client.join_group(&member2, &group_id);
 
-    // Only one member contributes
+    // Both members contribute so `execute_payout` gets past the
+    // all-contributed check and reaches the balance-dependent transfer.
     client.contribute(&creator, &group_id);
+    client.contribute(&member2, &group_id);
 
-    // Manually drain contract balance (simulate issue)
-    let contract_address = env.current_contract_address();
+    // Drain the contract's balance out from under it so the payout transfer
+    // itself fails with InsufficientContractBalance.
+    let contract_address = client.address.clone();
     let contract_balance = token_client.balance(&contract_address);
     token_client.transfer(&contract_address, &creator, &contract_balance);
-
-    // Mark second member as contributed (bypass check)
-    // This is a test scenario to trigger insufficient balance error
 
     // Advance time
     env.ledger().with_mut(|li| {

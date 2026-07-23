@@ -44,7 +44,7 @@ fn test_voting_strategy_status_uses_vote_winner() {
 
     env.ledger().with_mut(|ledger| {
         ledger.timestamp = 1_700_000_000;
-        ledger.sequence = 77;
+        ledger.sequence_number = 77;
     });
 
     let group_id = client.create_group_with_ordering(
@@ -98,7 +98,7 @@ fn test_random_strategy_status_returns_eligible_member() {
 
     env.ledger().with_mut(|ledger| {
         ledger.timestamp = 1_700_000_123;
-        ledger.sequence = 99;
+        ledger.sequence_number = 99;
     });
 
     let group_id = client.create_group_with_ordering(

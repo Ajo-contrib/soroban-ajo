@@ -1901,6 +1901,9 @@ export const initializeSoroban = (): SorobanService => {
             const sourceAccount = await server.getAccount(publicKey)
 
             const callArgs = [
+              SorobanClient.xdr.ScVal.scvAddress(
+                SorobanClient.Address.fromString(publicKey).toScAddress()
+              ),
               SorobanClient.xdr.ScVal.scvU64(new SorobanClient.xdr.Uint64(parseInt(groupId))),
               SorobanClient.xdr.ScVal.scvString(name),
               SorobanClient.xdr.ScVal.scvString(description),

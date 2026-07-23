@@ -26,7 +26,7 @@ fn test_set_and_get_metadata() {
     let description = String::from_str(&env, "A test group for esusu");
     let rules = String::from_str(&env, "Don't be late with payments");
 
-    client.set_group_metadata(&group_id, &name, &description, &rules);
+    client.set_group_metadata(&creator, &group_id, &name, &description, &rules);
 
     let metadata = client.get_group_metadata(&group_id);
 
@@ -45,13 +45,13 @@ fn test_update_metadata() {
     let desc1 = String::from_str(&env, "Desc 1");
     let rules1 = String::from_str(&env, "Rules 1");
 
-    client.set_group_metadata(&group_id, &name1, &desc1, &rules1);
+    client.set_group_metadata(&creator, &group_id, &name1, &desc1, &rules1);
 
     let name2 = String::from_str(&env, "Name 2");
     let desc2 = String::from_str(&env, "Desc 2");
     let rules2 = String::from_str(&env, "Rules 2");
 
-    client.set_group_metadata(&group_id, &name2, &desc2, &rules2);
+    client.set_group_metadata(&creator, &group_id, &name2, &desc2, &rules2);
 
     let metadata = client.get_group_metadata(&group_id);
     assert_eq!(metadata.name, name2);
@@ -73,22 +73,18 @@ fn test_set_metadata_unauthorized() {
     let (env, client, creator, token) = setup_test();
     let group_id = client.create_group(&creator, &token, &1000, &86400, &5, &86400u64, &5u32, &0u32);
 
+    // `set_group_metadata` takes an explicit `caller` argument compared against
+    // `group.creator` in contract logic, so a non-creator caller is rejected
+    // even under `mock_all_auths()` (which would otherwise satisfy `require_auth`
+    // for any address, defeating an auth-only check).
     let other = Address::generate(&env);
-    // env.mock_all_auths() is on, but we can still check if it requires auth
-    // To truly test unauthorized, we would need to NOT use mock_all_auths
-    // but Soroban test utils usually work better with it.
-    // However, AjoContract::set_group_metadata calls group.creator.require_auth()
-    // which will fail if 'other' is calling but 'creator' didn't authorize.
 
     let name = String::from_str(&env, "Hack");
     let desc = String::from_str(&env, "I am hacking");
     let rules = String::from_str(&env, "All money to me");
 
-    // Switch to 'other' caller
-    // client.set_group_metadata is actually called as 'other' if we don't do anything?
-    // No, mock_all_auths mocks the one who is supposed to sign.
-
-    // Let's just verify that it requires auth from the creator.
+    let result = client.try_set_group_metadata(&other, &group_id, &name, &desc, &rules);
+    assert_eq!(result, Err(Ok(AjoError::Unauthorized)));
 }
 
 #[test]
@@ -106,6 +102,6 @@ fn test_metadata_too_long() {
     let desc = String::from_str(&env, "Desc");
     let rules = String::from_str(&env, "Rules");
 
-    let result = client.try_set_group_metadata(&group_id, &long_name, &desc, &rules);
+    let result = client.try_set_group_metadata(&creator, &group_id, &long_name, &desc, &rules);
     assert_eq!(result, Err(Ok(AjoError::MetadataTooLong)));
 }
