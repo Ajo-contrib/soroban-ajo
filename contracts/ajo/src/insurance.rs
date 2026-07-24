@@ -185,7 +185,7 @@ pub fn process_claim(env: &Env, claim_id: u64, approved: bool) -> Result<(), Ajo
     let mut claim = storage::get_insurance_claim(env, claim_id).ok_or(AjoError::InvalidClaim)?;
 
     if claim.status != ClaimStatus::Pending {
-        return Err(AjoError::ClaimAlreadyProcessed);
+        return Err(AjoError::InvalidClaim);
     }
 
     let group = storage::get_group(env, claim.group_id).ok_or(AjoError::GroupNotFound)?;
@@ -264,7 +264,7 @@ pub fn auto_process_claim(env: &Env, claim_id: u64) -> Result<(), AjoError> {
         .ok_or(AjoError::InvalidClaim)?;
 
     if claim.status != ClaimStatus::Pending {
-        return Err(AjoError::ClaimAlreadyProcessed);
+        return Err(AjoError::InvalidClaim);
     }
 
     // Enhanced: Perform additional fraud checks during auto-processing

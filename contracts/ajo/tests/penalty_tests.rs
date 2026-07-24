@@ -1,7 +1,17 @@
 #![cfg(test)]
 
 use soroban_ajo::{AjoContract, AjoContractClient};
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env};
+use soroban_sdk::{testutils::{Address as _, Ledger}, token, Address, Env};
+
+/// Mints a generous flat balance of `token_id` to each address in `members`
+/// so they can satisfy `contribute()`'s balance check, including any late
+/// penalty surcharge, across multiple cycles.
+fn mint_tokens(env: &Env, token_id: &Address, members: &[Address]) {
+    let token_client = token::StellarAssetClient::new(env, token_id);
+    for member in members {
+        token_client.mint(member, &1_000_000_000i128);
+    }
+}
 
 /// Helper function to create a test environment and contract
 fn setup_test_env() -> (Env, AjoContractClient<'static>, Address, Address, Address, Address) {
@@ -79,6 +89,7 @@ fn test_on_time_contribution() {
 
     // Join group
     client.join_group(&member2, &group_id);
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone()]);
 
     // Contribute on time (within cycle window)
     client.contribute(&creator, &group_id);
@@ -119,6 +130,7 @@ fn test_late_contribution_with_penalty() {
 
     // Join group
     client.join_group(&member2, &group_id);
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone()]);
 
     // Creator contributes on time
     client.contribute(&creator, &group_id);
@@ -173,6 +185,7 @@ fn test_contribution_after_grace_period_fails() {
     );
 
     client.join_group(&member2, &group_id);
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone()]);
 
     // Creator contributes on time
     client.contribute(&creator, &group_id);
@@ -210,6 +223,7 @@ fn test_payout_includes_penalties() {
     );
 
     client.join_group(&member2, &group_id);
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone()]);
 
     // Creator contributes on time
     client.contribute(&creator, &group_id);
@@ -258,6 +272,7 @@ fn test_payout_delayed_during_grace_period() {
     );
 
     client.join_group(&member2, &group_id);
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone()]);
 
     // Both contribute on time
     client.contribute(&creator, &group_id);
@@ -297,6 +312,7 @@ fn test_reliability_score_calculation() {
 
     client.join_group(&member2, &group_id);
     client.join_group(&member3, &group_id);
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()]);
 
     // Cycle 1: All on time
     client.contribute(&creator, &group_id);

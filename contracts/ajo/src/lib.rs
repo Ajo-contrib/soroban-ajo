@@ -38,3 +38,4 @@ pub use types::{GroupTemplate, TemplateConfig};
 pub use types::{
     ReputationScore, ReputationTier, CreditScoreSnapshot, PaymentHistoryEntry, ScoreChangeReason,
 };
+pub use types::{ClaimStatus, InsuranceClaim, InsurancePool};

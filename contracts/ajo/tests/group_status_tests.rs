@@ -2,7 +2,16 @@
 
 use soroban_ajo::{AjoContract, AjoContractClient};
 use soroban_sdk::testutils::Ledger;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{testutils::Address as _, token, Address, Env};
+
+/// Mints `amount` of `token_id` to each address in `members` so they can
+/// satisfy `contribute()`'s balance check.
+fn mint_tokens(env: &Env, token_id: &Address, members: &[Address], amount: i128) {
+    let token_client = token::StellarAssetClient::new(env, token_id);
+    for member in members {
+        token_client.mint(member, &amount);
+    }
+}
 
 /// Helper function to create a test environment and contract
 fn setup_test_env() -> (Env, AjoContractClient<'static>, Address, Address, Address, Address) {
@@ -62,6 +71,7 @@ fn test_group_status_partial_contributions() {
     client.join_group(&member3, &group_id);
 
     // Two members contribute
+    mint_tokens(&_env, &token, &[creator.clone(), member2.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
 
@@ -86,6 +96,7 @@ fn test_group_status_all_contributed() {
     client.join_group(&member3, &group_id);
 
     // All members contribute
+    mint_tokens(&_env, &token, &[creator.clone(), member2.clone(), member3.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
     client.contribute(&member3, &group_id);
@@ -110,15 +121,16 @@ fn test_group_status_after_payout() {
     client.join_group(&member3, &group_id);
 
     // Complete first cycle
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
     client.contribute(&member3, &group_id);
-    
+
     // Advance time past grace period to allow payout
     env.ledger().with_mut(|li| {
         li.timestamp = li.timestamp + 604_800 + 86400 + 1;
     });
-    
+
     client.execute_payout(&group_id);
 
     // Get status after payout
@@ -143,15 +155,16 @@ fn test_group_status_mid_lifecycle() {
     client.join_group(&member3, &group_id);
 
     // Complete first cycle
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()], 300_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
     client.contribute(&member3, &group_id);
-    
+
     // Advance time past grace period
     env.ledger().with_mut(|li| {
         li.timestamp = li.timestamp + 604_800 + 86400 + 1;
     });
-    
+
     client.execute_payout(&group_id);
 
     // Complete second cycle
@@ -191,6 +204,7 @@ fn test_group_status_completed() {
     client.join_group(&member3, &group_id);
 
     // Complete all three cycles
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()], 300_000_000i128);
     for _ in 0..3 {
         client.contribute(&creator, &group_id);
         client.contribute(&member2, &group_id);
@@ -289,6 +303,7 @@ fn test_group_status_large_group() {
     }
 
     // Some contribute
+    mint_tokens(&env, &token, &members[0..3], 100_000_000i128);
     client.contribute(&members[0], &group_id);
     client.contribute(&members[1], &group_id);
     client.contribute(&members[2], &group_id);
@@ -310,6 +325,8 @@ fn test_group_status_multiple_cycles_tracking() {
     let group_id = client.create_group(&creator, &token, &100_000_000i128, &604_800u64, &3u32, &86400u64, &5u32, &0u32);
     client.join_group(&member2, &group_id);
     client.join_group(&member3, &group_id);
+
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()], 300_000_000i128);
 
     // Track status through multiple cycles
     for cycle in 1..=3 {
@@ -348,6 +365,7 @@ fn test_group_status_consistency_with_get_group() {
     let group_id = client.create_group(&creator, &token, &100_000_000i128, &604_800u64, &3u32, &86400u64, &5u32, &0u32);
     client.join_group(&member2, &group_id);
     client.join_group(&member3, &group_id);
+    mint_tokens(&_env, &token, &[creator.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
 
     // Get both status and group
@@ -421,6 +439,7 @@ fn test_group_status_no_overflow_with_many_contributions() {
     }
 
     // All contribute
+    mint_tokens(&env, &token, &members, 100_000_000i128);
     for member in &members {
         client.contribute(member, &group_id);
     }
@@ -444,11 +463,12 @@ fn test_group_status_placeholder_address_when_complete() {
     client.join_group(&member3, &group_id);
 
     // Complete all cycles
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()], 300_000_000i128);
     for _ in 0..3 {
         client.contribute(&creator, &group_id);
         client.contribute(&member2, &group_id);
         client.contribute(&member3, &group_id);
-        
+
         // Advance time past grace period
         env.ledger().with_mut(|li| {
             li.timestamp = li.timestamp + 604_800 + 86400 + 1;
@@ -477,6 +497,7 @@ fn test_group_status_atomic_consistency() {
     client.join_group(&member3, &group_id);
 
     // Contribute
+    mint_tokens(&_env, &token, &[creator.clone(), member2.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
 

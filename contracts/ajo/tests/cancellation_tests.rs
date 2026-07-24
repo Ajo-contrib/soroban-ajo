@@ -1,7 +1,16 @@
 #![cfg(test)]
 
 use soroban_ajo::{AjoContract, AjoContractClient, AjoError};
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env};
+use soroban_sdk::{testutils::{Address as _, Ledger}, token, Address, Env};
+
+/// Mints `amount` of `token_id` to each address in `members` so they can
+/// satisfy `contribute()`'s balance check.
+fn mint_tokens(env: &Env, token_id: &Address, members: &[Address], amount: i128) {
+    let token_client = token::StellarAssetClient::new(env, token_id);
+    for member in members {
+        token_client.mint(member, &amount);
+    }
+}
 
 /// Helper function to create a test environment and contract
 fn setup_test_env() -> (Env, AjoContractClient<'static>, Address, Address, Address, Address) {
@@ -39,6 +48,7 @@ fn test_cancel_group_before_payout() {
     client.join_group(&member3, &group_id);
 
     // Members contribute
+    mint_tokens(&_env, &token, &[creator.clone(), member2.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
 
@@ -70,6 +80,7 @@ fn test_cannot_cancel_after_payout() {
     client.join_group(&member3, &group_id);
 
     // All contribute
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
     client.contribute(&member3, &group_id);
@@ -112,6 +123,7 @@ fn test_request_refund_after_cycle_expires() {
     client.join_group(&member3, &group_id);
 
     // Only some members contribute
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
 
@@ -157,6 +169,7 @@ fn test_voting_on_refund_request() {
     client.join_group(&member3, &group_id);
 
     // Contribute
+    mint_tokens(&env, &token, &[creator.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
 
     // Advance time past grace period
@@ -216,6 +229,7 @@ fn test_execute_approved_refund() {
     client.join_group(&member3, &group_id);
 
     // All contribute
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
     client.contribute(&member3, &group_id);
@@ -329,6 +343,7 @@ fn test_emergency_refund_by_admin() {
     
     // Member joins and contributes
     client.join_group(&member2, &group_id);
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
 
@@ -371,6 +386,7 @@ fn test_cannot_contribute_to_cancelled_group() {
     client.join_group(&member2, &group_id);
 
     // Creator contributes and cancels
+    mint_tokens(&_env, &token, &[creator.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.cancel_group(&creator, &group_id);
 
@@ -389,6 +405,7 @@ fn test_cannot_execute_payout_on_cancelled_group() {
     // Members join and contribute
     client.join_group(&member2, &group_id);
     client.join_group(&member3, &group_id);
+    mint_tokens(&env, &token, &[creator.clone(), member2.clone(), member3.clone()], 100_000_000i128);
     client.contribute(&creator, &group_id);
     client.contribute(&member2, &group_id);
     client.contribute(&member3, &group_id);
