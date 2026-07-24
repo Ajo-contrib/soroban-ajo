@@ -2728,6 +2728,21 @@ pub fn get_refund_record(
                         }
                     }
                     group.members = new_members;
+
+                    // `payout_index` is both "how many payouts have happened"
+                    // (compared against member count to detect completion)
+                    // and, for the Sequential strategy, a raw position into
+                    // `members`. Removing a member who already received their
+                    // payout shrinks the member list without any payout
+                    // having been undone, so the count must shrink with it -
+                    // otherwise the group reaches `is_complete` one payout
+                    // early (Random/VotingBased/ContributionBased) or
+                    // Sequential's index silently lands on the member who
+                    // should be next in line and skips them entirely.
+                    if storage::has_received_payout(&env, dispute.group_id, &dispute.defendant) {
+                        group.payout_index = group.payout_index.saturating_sub(1);
+                    }
+
                     storage::store_group(&env, dispute.group_id, &group);
                 }
                 crate::types::DisputeResolution::Refund => {
