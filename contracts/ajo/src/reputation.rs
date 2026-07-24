@@ -131,8 +131,19 @@ pub fn compute_credit_score(stats: &crate::types::MemberStats) -> u32 {
 pub fn update_member_reputation(env: &Env, member: &Address) -> Result<ReputationScore, AjoError> {
     let stats = storage::get_member_stats(env, member)
         .unwrap_or_else(|| utils::default_member_stats(env, member));
+    update_member_reputation_with_stats(env, member, &stats)
+}
 
-    let credit_score = compute_credit_score(&stats);
+/// Same as [`update_member_reputation`], but for callers that already have
+/// a freshly loaded/stored `MemberStats` in scope (e.g. `contribute` and
+/// `execute_payout` right after updating stats) — avoids re-fetching the
+/// same record from storage a second time within the same call.
+pub(crate) fn update_member_reputation_with_stats(
+    env: &Env,
+    member: &Address,
+    stats: &crate::types::MemberStats,
+) -> Result<ReputationScore, AjoError> {
+    let credit_score = compute_credit_score(stats);
     let tier = tier_from_score(credit_score);
     let now = env.ledger().timestamp();
 

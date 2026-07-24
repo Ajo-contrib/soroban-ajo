@@ -410,6 +410,11 @@ impl AjoContract {
     /// * `InsufficientBalance` - If member doesn't have enough tokens
     /// * `InsufficientBalance` - If the token transfer fails
     pub fn contribute(env: Env, member: Address, group_id: u64) -> Result<(), AjoError> {
+        // Keep the contract's own instance-storage entry (admin, schema
+        // version, counters) alive — if it expires the whole contract
+        // becomes unusable. See `storage::extend_instance_ttl`.
+        storage::extend_instance_ttl(&env);
+
         // Check if paused
         pausable::ensure_not_paused(&env)?;
 
@@ -579,7 +584,9 @@ impl AjoContract {
             false, // on-time contribution
             false,
         );
-        let _ = crate::reputation::update_member_reputation(&env, &member);
+        // Reuse `stats` (already loaded and just stored above) instead of
+        // re-fetching the same MemberStats record from storage.
+        let _ = crate::reputation::update_member_reputation_with_stats(&env, &member, &stats);
 
         Ok(())
     }
@@ -650,6 +657,10 @@ impl AjoContract {
     /// * `InsufficientContractBalance` - If contract doesn't have enough tokens
     /// * `InsufficientBalance` - If the token transfer fails
     pub fn execute_payout(env: Env, group_id: u64) -> Result<(), AjoError> {
+        // Keep the contract's own instance-storage entry alive; see
+        // `storage::extend_instance_ttl`.
+        storage::extend_instance_ttl(&env);
+
         // Check if paused
         pausable::ensure_not_paused(&env)?;
 
@@ -760,13 +771,19 @@ impl AjoContract {
                     stats.qualifying_groups_completed += 1;
                 }
                 storage::store_member_stats(&env, &member, &stats);
-                // Update reputation for all members on group completion
-                let _ = crate::reputation::update_member_reputation(&env, &member);
+                // Update reputation for all members on group completion,
+                // reusing `stats` instead of re-fetching it from storage.
+                let _ = crate::reputation::update_member_reputation_with_stats(&env, &member, &stats);
             }
+        } else {
+            // The completion loop above already refreshes every member's
+            // reputation (including the recipient's) when the group
+            // completes, so this only needs to run on the non-completing
+            // path — otherwise it would recompute and store an identical
+            // ReputationScore a second time and append a duplicate,
+            // score-unchanged CreditScoreSnapshot.
+            let _ = crate::reputation::update_member_reputation(&env, &payout_recipient);
         }
-
-        // Update reputation for recipient
-        let _ = crate::reputation::update_member_reputation(&env, &payout_recipient);
 
         // ─────────────────────────────────────────────────────────────────────────
         // INTERACTIONS PHASE: External calls (token transfers) happen LAST
