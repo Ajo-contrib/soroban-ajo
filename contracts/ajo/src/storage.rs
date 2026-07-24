@@ -1,6 +1,61 @@
-use soroban_sdk::{symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{symbol_short, Address, Env, IntoVal, Symbol, Val, Vec};
 
 use crate::errors::AjoError;
+
+// ── TTL policy ─────────────────────────────────────────────────────────────
+//
+// Soroban never auto-renews storage TTLs; every persistent (and instance)
+// entry must be re-extended by the contract or it becomes inaccessible
+// ("archived") once the ledger sequence passes its `live_until` — a hard
+// error on read, not just a cost concern (see `check_if_entry_is_live` in
+// soroban-env-host). Group cycles run up to 90 days plus a 7-day grace
+// period (see `utils::GroupTemplate` durations), so any entry touched only
+// once and never re-extended is a real expiry risk well within a single
+// group's active lifecycle.
+//
+// ~5s average ledger close time on Stellar.
+const LEDGERS_PER_DAY: u32 = 17_280;
+/// Re-extend once fewer than this many ledgers of TTL remain.
+const PERSISTENT_TTL_THRESHOLD: u32 = 30 * LEDGERS_PER_DAY;
+/// Push the TTL out this far when (re-)extending — comfortably longer than
+/// the worst-case single-cycle gap between writes (90-day cycle + 7-day
+/// grace) and well under the network's max entry TTL.
+const PERSISTENT_TTL_EXTEND_TO: u32 = 120 * LEDGERS_PER_DAY;
+
+/// Extends the TTL of a persistent entry using the contract-wide policy
+/// above. Call after every persistent `set`, and after `get` for entries
+/// that may be read many times between writes (e.g. `Group`, metadata).
+fn extend_persistent_ttl<K>(env: &Env, key: &K)
+where
+    K: IntoVal<Env, Val>,
+{
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+}
+
+/// Extends the TTL of the shared instance-storage entry. Instance storage
+/// backs the contract's own identity (admin, schema version, counters) — if
+/// it expires the *entire contract* becomes unusable, a strictly worse
+/// failure mode than losing one group's data. Called once per hot-path
+/// entrypoint invocation (`contribute`, `execute_payout`).
+pub fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+}
+
+/// Writes a persistent entry and extends its TTL in one step, so every
+/// persistent write in this module automatically keeps its own entry alive
+/// per the policy above.
+fn persistent_set<K, V>(env: &Env, key: &K, value: &V)
+where
+    K: IntoVal<Env, Val>,
+    V: IntoVal<Env, Val>,
+{
+    env.storage().persistent().set(key, value);
+    extend_persistent_ttl(env, key);
+}
 
 /// Current persisted storage schema version supported by this Wasm.
 ///
@@ -165,7 +220,7 @@ pub fn get_next_group_id(env: &Env) -> u64 {
 pub fn store_group(env: &Env, group_id: u64, group: &crate::types::Group) {
     set_schema_version_if_unset(env);
     let key = (symbol_short!("GROUP"), group_id);
-    env.storage().persistent().set(&key, group);
+    persistent_set(env, &key, group);
 }
 
 /// Retrieves a [`Group`](crate::types::Group) from persistent ledger storage.
@@ -185,7 +240,13 @@ pub fn get_group(env: &Env, group_id: u64) -> Option<crate::types::Group> {
         return None;
     }
     let key = (symbol_short!("GROUP"), group_id);
-    env.storage().persistent().get(&key)
+    let group = env.storage().persistent().get(&key);
+    if group.is_some() {
+        // Refresh on read too: a group can be queried many times between
+        // cycle writes without ever going stale.
+        extend_persistent_ttl(env, &key);
+    }
+    group
 }
 
 /// Returns the stored schema version, defaulting legacy empty instances to v1.
@@ -245,7 +306,7 @@ pub fn remove_group(env: &Env, group_id: u64) {
 /// * `paid` - `true` to mark as paid; `false` to reset (rarely needed)
 pub fn store_contribution(env: &Env, group_id: u64, cycle: u32, member: &Address, paid: bool) {
     let key = (symbol_short!("CONTRIB"), group_id, cycle, member);
-    env.storage().persistent().set(&key, &paid);
+    persistent_set(env, &key, &paid);
 }
 
 /// Returns `true` if the given member has contributed during the specified cycle.
@@ -276,7 +337,7 @@ pub fn has_contributed(env: &Env, group_id: u64, cycle: u32, member: &Address) -
 /// * `member` - The address that received the payout
 pub fn mark_payout_received(env: &Env, group_id: u64, member: &Address) {
     let key = (symbol_short!("PAYOUT"), group_id, member);
-    env.storage().persistent().set(&key, &true);
+    persistent_set(env, &key, &true);
 }
 
 /// Returns contribution status for every member in a cycle as an ordered vector.
@@ -347,7 +408,7 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 /// * `metadata` - The metadata struct to store
 pub fn store_group_metadata(env: &Env, group_id: u64, metadata: &crate::types::GroupMetadata) {
     let key = (symbol_short!("METADATA"), group_id);
-    env.storage().persistent().set(&key, metadata);
+    persistent_set(env, &key, metadata);
 }
 
 /// Retrieves metadata for a group from persistent storage.
@@ -360,7 +421,11 @@ pub fn store_group_metadata(env: &Env, group_id: u64, metadata: &crate::types::G
 /// `Some(GroupMetadata)` if it exists, `None` otherwise
 pub fn get_group_metadata(env: &Env, group_id: u64) -> Option<crate::types::GroupMetadata> {
     let key = (symbol_short!("METADATA"), group_id);
-    env.storage().persistent().get(&key)
+    let metadata = env.storage().persistent().get(&key);
+    if metadata.is_some() {
+        extend_persistent_ttl(env, &key);
+    }
+    metadata
 }
 
 /// Checks if metadata exists for a group.
@@ -392,7 +457,7 @@ pub fn store_contribution_detail(
     record: &crate::types::ContributionRecord,
 ) {
     let key = (symbol_short!("CONTREC"), group_id, cycle, member);
-    env.storage().persistent().set(&key, record);
+    persistent_set(env, &key, record);
 }
 
 /// Retrieves detailed contribution record.
@@ -429,7 +494,7 @@ pub fn store_member_penalty(
     record: &crate::types::MemberPenaltyRecord,
 ) {
     let key = (symbol_short!("PENALTY"), group_id, member);
-    env.storage().persistent().set(&key, record);
+    persistent_set(env, &key, record);
 }
 
 /// Retrieves member penalty statistics.
@@ -459,7 +524,7 @@ pub fn get_member_penalty(
 /// * `amount` - Total penalties collected in this cycle
 pub fn store_cycle_penalty_pool(env: &Env, group_id: u64, cycle: u32, amount: i128) {
     let key = (symbol_short!("PENPOOL"), group_id, cycle);
-    env.storage().persistent().set(&key, &amount);
+    persistent_set(env, &key, &amount);
 }
 
 /// Retrieves the penalty pool for a cycle.
@@ -496,7 +561,7 @@ pub fn add_to_penalty_pool(env: &Env, group_id: u64, cycle: u32, penalty: i128) 
 /// * `request` - The refund request data
 pub fn store_refund_request(env: &Env, group_id: u64, request: &crate::types::RefundRequest) {
     let key = (symbol_short!("REFREQ"), group_id);
-    env.storage().persistent().set(&key, request);
+    persistent_set(env, &key, request);
 }
 
 /// Retrieves a refund request for a group.
@@ -549,7 +614,7 @@ pub fn store_refund_vote(
     vote: &crate::types::RefundVote,
 ) {
     let key = (symbol_short!("REFVOTE"), group_id, member);
-    env.storage().persistent().set(&key, vote);
+    persistent_set(env, &key, vote);
 }
 
 /// Retrieves a member's vote on a refund request.
@@ -598,7 +663,7 @@ pub fn store_refund_record(
     record: &crate::types::RefundRecord,
 ) {
     let key = (symbol_short!("REFUND"), group_id, member);
-    env.storage().persistent().set(&key, record);
+    persistent_set(env, &key, record);
 }
 
 /// Retrieves a refund record for a member.
@@ -620,38 +685,54 @@ pub fn get_refund_record(
 }
 
 /// Stores the insurance pool for a token.
+///
+/// Per-token, unboundedly growing data — persistent, not instance (see
+/// `get_insurance_pool` for why this used to be instance storage and how
+/// any pre-existing instance-stored pool is picked up transparently).
 pub fn store_insurance_pool(env: &Env, token: &Address, pool: &crate::types::InsurancePool) {
     let key = (symbol_short!("INSPOOL"), token);
-    env.storage().instance().set(&key, pool);
+    persistent_set(env, &key, pool);
 }
 
 /// Gets the fraud risk profile for a member
 pub fn get_fraud_risk_profile(env: &Env, member: &Address) -> Option<crate::types::FraudRiskProfile> {
     let key = (symbol_short!("FRDPROF"), member);
-    env.storage().instance().get(&key)
+    env.storage().persistent().get(&key)
 }
 
 /// Stores the fraud risk profile for a member
 pub fn store_fraud_risk_profile(env: &Env, member: &Address, profile: &crate::types::FraudRiskProfile) {
     let key = (symbol_short!("FRDPROF"), member);
-    env.storage().instance().set(&key, profile);
+    persistent_set(env, &key, profile);
 }
 
 /// Gets the group risk assessment
 pub fn get_group_risk_assessment(env: &Env, group_id: u64) -> Option<crate::types::GroupRiskAssessment> {
     let key = (symbol_short!("GRPRISK"), group_id);
-    env.storage().instance().get(&key)
+    env.storage().persistent().get(&key)
 }
 
 /// Stores the group risk assessment
 pub fn store_group_risk_assessment(env: &Env, group_id: u64, assessment: &crate::types::GroupRiskAssessment) {
     let key = (symbol_short!("GRPRISK"), group_id);
-    env.storage().instance().set(&key, assessment);
+    persistent_set(env, &key, assessment);
 }
 
 /// Retrieves the insurance pool for a token.
+///
+/// `InsurancePool` used to live in instance storage — a single shared
+/// ledger entry read/written on every contract invocation that touches
+/// *any* instance key, which taxes every call (not just insurance-enabled
+/// ones) as more tokens/groups accumulate. It now lives in persistent
+/// storage, keyed the same way. Any pool already written under the old
+/// instance key (from before this change) is still readable via the
+/// fallback below and is transparently migrated forward the next time
+/// `store_insurance_pool` is called for that token.
 pub fn get_insurance_pool(env: &Env, token: &Address) -> Option<crate::types::InsurancePool> {
     let key = (symbol_short!("INSPOOL"), token);
+    if let Some(pool) = env.storage().persistent().get(&key) {
+        return Some(pool);
+    }
     env.storage().instance().get(&key)
 }
 
@@ -667,7 +748,7 @@ pub fn get_next_claim_id(env: &Env) -> u64 {
 /// Stores an insurance claim.
 pub fn store_insurance_claim(env: &Env, claim_id: u64, claim: &crate::types::InsuranceClaim) {
     let key = (symbol_short!("INSCLAIM"), claim_id);
-    env.storage().persistent().set(&key, claim);
+    persistent_set(env, &key, claim);
 }
 
 /// Retrieves an insurance claim.
@@ -697,7 +778,7 @@ pub fn store_payout_vote(
     vote: &crate::types::PayoutVote,
 ) {
     let key = (symbol_short!("PVOTE"), group_id, cycle, voter);
-    env.storage().persistent().set(&key, vote);
+    persistent_set(env, &key, vote);
 }
 
 /// Retrieves the payout vote cast by `voter` for `cycle`, if any.
@@ -720,7 +801,7 @@ pub fn has_voted_for_payout(env: &Env, group_id: u64, cycle: u32, voter: &Addres
 /// Persists the determined [`PayoutOrder`](crate::types::PayoutOrder) for a cycle.
 pub fn store_payout_order(env: &Env, group_id: u64, cycle: u32, order: &crate::types::PayoutOrder) {
     let key = (symbol_short!("PORDER"), group_id, cycle);
-    env.storage().persistent().set(&key, order);
+    persistent_set(env, &key, order);
 }
 
 /// Retrieves the committed payout order for a cycle, if one has been recorded.
@@ -741,7 +822,7 @@ pub fn store_notification_preferences(
     prefs: &crate::types::MemberNotificationPreferences,
 ) {
     let key = (symbol_short!("NOTPREF"), member);
-    env.storage().persistent().set(&key, prefs);
+    persistent_set(env, &key, prefs);
 }
 
 /// Retrieves a member's notification preferences, if set.
@@ -764,7 +845,7 @@ pub fn store_reminder_record(
     record: &crate::types::ReminderRecord,
 ) {
     let key = (symbol_short!("REMIND"), group_id, cycle, member);
-    env.storage().persistent().set(&key, record);
+    persistent_set(env, &key, record);
 }
 
 /// Retrieves the most recent reminder record for a member in a given cycle.
@@ -786,7 +867,7 @@ pub fn store_group_milestones(
     milestones: &Vec<crate::types::MilestoneRecord>,
 ) {
     let key = (symbol_short!("GMILE"), group_id);
-    env.storage().persistent().set(&key, milestones);
+    persistent_set(env, &key, milestones);
 }
 
 /// Retrieves group milestones.
@@ -812,7 +893,7 @@ pub fn store_member_achievements(
     achievements: &Vec<crate::types::AchievementRecord>,
 ) {
     let key = (symbol_short!("MACHIEV"), member);
-    env.storage().persistent().set(&key, achievements);
+    persistent_set(env, &key, achievements);
 }
 
 /// Retrieves member achievements.
@@ -838,7 +919,7 @@ pub fn add_member_achievement(
 /// Stores aggregated member statistics.
 pub fn store_member_stats(env: &Env, member: &Address, stats: &crate::types::MemberStats) {
     let key = (symbol_short!("MSTATS"), member);
-    env.storage().persistent().set(&key, stats);
+    persistent_set(env, &key, stats);
 }
 
 /// Retrieves aggregated member statistics.
@@ -857,7 +938,7 @@ pub fn store_invitation(
     invitation: &crate::types::GroupInvitation,
 ) {
     let key = (symbol_short!("INVITE"), group_id, invitee);
-    env.storage().persistent().set(&key, invitation);
+    persistent_set(env, &key, invitation);
 }
 
 /// Retrieves an invitation for a member to join a group.
@@ -879,7 +960,7 @@ pub fn store_multi_token_config(
     config: &crate::types::MultiTokenConfig,
 ) {
     let key = (symbol_short!("MTCONF"), group_id);
-    env.storage().persistent().set(&key, config);
+    persistent_set(env, &key, config);
 }
 
 /// Retrieves the multi-token configuration for a group.
@@ -908,7 +989,7 @@ pub fn store_token_contribution(
     record: &crate::types::TokenContribution,
 ) {
     let key = (symbol_short!("TKCONT"), group_id, cycle, member);
-    env.storage().persistent().set(&key, record);
+    persistent_set(env, &key, record);
 }
 
 /// Retrieves the token-specific contribution record for a member in a cycle.
@@ -934,7 +1015,7 @@ pub fn add_group_token_balance(
 ) {
     let key = (symbol_short!("GTBAL"), group_id, cycle, token);
     let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-    env.storage().persistent().set(&key, &(current + amount));
+    persistent_set(env, &key, &(current + amount));
 }
 
 /// Retrieves the accumulated token balance for a group in a given cycle.
@@ -961,7 +1042,7 @@ pub fn get_next_dispute_id(env: &Env) -> u64 {
 /// Stores a dispute.
 pub fn store_dispute(env: &Env, id: u64, dispute: &crate::types::Dispute) {
     let key = (symbol_short!("DISPUTE"), id);
-    env.storage().persistent().set(&key, dispute);
+    persistent_set(env, &key, dispute);
 }
 
 /// Retrieves a dispute by ID.
@@ -973,7 +1054,7 @@ pub fn get_dispute(env: &Env, id: u64) -> Option<crate::types::Dispute> {
 /// Records that a voter has voted on a dispute.
 pub fn store_dispute_vote(env: &Env, dispute_id: u64, voter: &Address, vote: &crate::types::DisputeVote) {
     let key = (symbol_short!("DISPVOTE"), dispute_id, voter);
-    env.storage().persistent().set(&key, vote);
+    persistent_set(env, &key, vote);
 }
 
 /// Returns `true` if the voter has already voted on this dispute.
@@ -985,7 +1066,7 @@ pub fn has_voted_on_dispute(env: &Env, dispute_id: u64, voter: &Address) -> bool
 /// Stores the list of dispute IDs for a group.
 pub fn store_group_dispute_ids(env: &Env, group_id: u64, ids: &Vec<u64>) {
     let key = (symbol_short!("DISPGIDS"), group_id);
-    env.storage().persistent().set(&key, ids);
+    persistent_set(env, &key, ids);
 }
 
 /// Retrieves the list of dispute IDs for a group.
@@ -999,7 +1080,7 @@ pub fn get_group_dispute_ids(env: &Env, group_id: u64) -> Vec<u64> {
 /// Stores the aggregated reputation record for a member.
 pub fn store_reputation(env: &Env, member: &Address, rep: &crate::types::ReputationScore) {
     let key = (symbol_short!("MREP"), member);
-    env.storage().persistent().set(&key, rep);
+    persistent_set(env, &key, rep);
 }
 
 /// Retrieves the aggregated reputation record for a member.
@@ -1026,7 +1107,7 @@ pub fn append_credit_snapshot(
         history.remove(0);
     }
     history.push_back(snapshot.clone());
-    env.storage().persistent().set(&key, &history);
+    persistent_set(env, &key, &history);
 }
 
 /// Retrieves the credit score snapshot history for a member.
@@ -1056,7 +1137,7 @@ pub fn append_payment_history(
         history.remove(0);
     }
     history.push_back(entry.clone());
-    env.storage().persistent().set(&key, &history);
+    persistent_set(env, &key, &history);
 }
 
 /// Retrieves the payment history for a member.
