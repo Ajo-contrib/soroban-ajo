@@ -198,9 +198,11 @@ export class ReferralService {
     }
 
     let initialStatus = 'PENDING'
+    let cachedFraudCheck: { flags: Array<{ type: string; details: unknown }>; shouldBlock: boolean } | null = null
+
     if (metadata && this.fraudDetector) {
-      const fraudCheck = await this.fraudDetector.checkReferral(referrerId, refereeId, metadata)
-      if (fraudCheck.shouldBlock) {
+      cachedFraudCheck = await this.fraudDetector.checkReferral(referrerId, refereeId, metadata)
+      if (cachedFraudCheck.shouldBlock) {
         initialStatus = 'FLAGGED'
       }
     }
@@ -215,14 +217,14 @@ export class ReferralService {
       },
     })
 
-    if (metadata && this.fraudDetector) {
-      const fraudCheck = await this.fraudDetector.checkReferral(referrerId, refereeId, metadata)
-      for (const flag of fraudCheck.flags) {
+    // Persist flags using the already-computed fraud check (no second call)
+    if (cachedFraudCheck) {
+      for (const flag of cachedFraudCheck.flags) {
         await this.prisma.fraudFlag.create({
           data: {
             referralId: referral.id,
             flagType: flag.type,
-            severity: fraudCheck.shouldBlock ? 'HIGH' : 'MEDIUM',
+            severity: cachedFraudCheck.shouldBlock ? 'HIGH' : 'MEDIUM',
             details: JSON.stringify(flag.details ?? {}),
             status: 'PENDING',
           },

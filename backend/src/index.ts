@@ -44,6 +44,7 @@ import { sagasRouter } from './routes/sagas'
 import { recoverIncompleteSagas } from './sagas/sagaRecovery'
 import './sagas/groupCreationSaga'
 import './sagas/payoutSaga'
+import { blockchainListener } from './services/blockchainListener'
 import { versionsRouter } from './routes/versions'
 import { ipBlocklist, ddosProtection } from './middleware/ddosProtection'
 import { requestThrottle } from './middleware/requestThrottle'
@@ -102,9 +103,12 @@ app.use('/api/multisig', apiLimiter, multisigRouter)
 // app.use('/api/gamification', gamificationRouter) // Temporarily disabled due to missing auth middleware
 // app.use('/api/goals', goalsRouter) // Temporarily disabled due to type errors
 
-// Disputes
 import { disputesRouter } from './routes/disputes'
 app.use('/api/disputes', disputesRouter)
+
+// Fraud Detection (unified rule-based + ML ensemble)
+import { fraudRouter } from './routes/fraud'
+app.use('/api/fraud', fraudRouter)
 
 // Templates
 import { templatesRouter } from './routes/templates'
@@ -174,6 +178,15 @@ server.listen(PORT, () => {
       error: err instanceof Error ? err.message : String(err),
     })
   })
+
+  // Start the hardened blockchain event listener.
+  // start() loads the last checkpoint, back-fills missed events, then attaches
+  // to the live SSE stream — all in one async call.
+  blockchainListener.start().catch((err) => {
+    logger.error('BlockchainListener failed to start', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  })
 })
 
 // Graceful shutdown
@@ -192,6 +205,7 @@ const shutdown = async () => {
 
   stopScheduler()
   await stopWorkers()
+  blockchainListener.stop()
   // give a short delay in case there are pending callbacks
   setTimeout(() => process.exit(0), 100)
 }

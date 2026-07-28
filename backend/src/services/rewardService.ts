@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { RewardEngine } from './RewardEngine'
-import { FraudDetector } from './FraudDetector'
+import { FraudOrchestrator } from './FraudOrchestrator'
 import Redis from 'ioredis'
 
 export class RewardService {
@@ -10,8 +10,10 @@ export class RewardService {
     private readonly prisma: PrismaClient = new PrismaClient(),
     redis: Redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
   ) {
-    const fraudDetector = new FraudDetector(prisma, redis)
-    this.rewardEngine = new RewardEngine(prisma, fraudDetector)
+    // RewardEngine's fraud gate is the ensemble orchestrator so reward blocking
+    // considers both rule-based flags AND ML anomaly severity.
+    const orchestrator = new FraudOrchestrator(prisma, redis)
+    this.rewardEngine = new RewardEngine(prisma, orchestrator)
   }
 
   async getRewards(userId: string, filters: { status?: string; type?: string }) {

@@ -588,6 +588,33 @@ model FraudFlag {
   @@index([severity])
 }
 
+/// Fraud alerts raised by the ML/statistical anomaly-detection layer.
+/// These complement FraudFlag records (which track rule-based referral fraud)
+/// and together form the unified fraud-detection audit trail.
+model FraudAlert {
+  id         String    @id @default(cuid())
+  userId     String
+  alertType  String    // TRANSACTION_ANOMALY | CONTRIBUTION_ANOMALY | PATTERN_MATCH
+  severity   String    // LOW | MEDIUM | HIGH | CRITICAL
+  score      Float     // 0-100 risk score
+  details    String    @db.Text // JSON with evidence (reasons, amounts, ipAddress, etc.)
+  status     String    @default("OPEN") // OPEN | REVIEWING | RESOLVED | DISMISSED
+  /// Source system that raised this alert
+  source     String    @default("ML") // ML | RULE | ENSEMBLE
+  /// Optional link back to a FraudFlag if an ensemble decision produced both
+  fraudFlagId String?  @unique
+  resolution String?   @db.Text
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+  reviewedBy String?
+
+  @@index([userId])
+  @@index([status])
+  @@index([severity])
+  @@index([alertType])
+  @@index([createdAt(sort: Desc)])
+}
+
 model LeaderboardCache {
   id              String   @id @default(cuid())
   leaderboardType String // TOP_REFERRERS, MOST_ACTIVE, BEST_SAVERS
@@ -1123,6 +1150,36 @@ model VerificationDoc {
   verification Verification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
 
   @@index([verificationId])
+}
+
+/// Persists the last ledger sequence number successfully processed by the
+/// blockchain event listener. A single row (id = 'singleton') is upserted
+/// inside the same transaction that applies event state changes, so the
+/// checkpoint and the derived state are always in sync — a crash between
+/// "process" and "advance checkpoint" can never cause a skip or double-process.
+model ListenerCheckpoint {
+  id              String   @id @default("singleton")
+  /// The Soroban ledger sequence number of the last fully-processed event.
+  lastLedger      Int      @default(0)
+  /// Horizon paging_token of the last event, used to resume the SSE stream.
+  lastPagingToken String?
+  updatedAt       DateTime @updatedAt
+}
+
+/// One row per contract × ledger × txHash × eventType tuple.
+/// Inserted atomically with the event's state changes. Acts as the
+/// exactly-once guard: if the same event arrives again (reconnect, replay)
+/// the unique constraint causes the insert to fail and the handler is skipped.
+model ProcessedBlockchainEvent {
+  id          String   @id @default(cuid())
+  contractId  String
+  ledger      Int
+  txHash      String
+  eventType   String
+  processedAt DateTime @default(now())
+
+  @@unique([contractId, txHash, eventType])
+  @@index([contractId, ledger])
 }
 
 /// Saved search filters
