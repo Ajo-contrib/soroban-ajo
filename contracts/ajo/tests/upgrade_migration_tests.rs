@@ -9,7 +9,7 @@
 use soroban_ajo::{AjoContract, AjoContractClient, AjoError};
 use soroban_sdk::{testutils::Address as _, token, Address, BytesN, Env};
 
-fn setup() -> (Env, AjoContractClient<'static>, Address) {
+fn setup() -> (Env, AjoContractClient<'static>, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register_contract(None, AjoContract);
@@ -18,12 +18,12 @@ fn setup() -> (Env, AjoContractClient<'static>, Address) {
     client.initialize(&admin);
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract(token_admin);
-    (env, client, token_id)
+    (env, client, admin, token_id)
 }
 
 #[test]
 fn populated_state_rejects_incompatible_upgrade_schema_and_remains_readable() {
-    let (env, client, token_id) = setup();
+    let (env, client, admin, token_id) = setup();
     let creator = Address::generate(&env);
     let member = Address::generate(&env);
 
@@ -47,7 +47,7 @@ fn populated_state_rejects_incompatible_upgrade_schema_and_remains_readable() {
     assert_eq!(client.storage_schema_version(), 1);
 
     let wasm_hash = BytesN::from_array(&env, &[7u8; 32]);
-    let result = client.try_upgrade(&wasm_hash, &2u32);
+    let result = client.try_upgrade(&admin, &wasm_hash, &2u32);
     assert_eq!(result, Err(Ok(AjoError::SchemaMismatch)));
 
     let after = client.get_group(&group_id);

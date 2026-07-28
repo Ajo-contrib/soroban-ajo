@@ -1,6 +1,13 @@
 use soroban_sdk::contracterror;
 
 /// Error codes for the Ajo contract.
+///
+/// Soroban's `#[contracterror]` spec export caps a single error enum at 50
+/// cases (`VecM<ScSpecUdtErrorEnumCaseV0, 50>` in stellar-xdr) - exceeding it
+/// makes the whole crate fail to compile with `LengthExceedsMax`. Before
+/// adding a new variant here, reuse an existing one where it's semantically
+/// close (e.g. `Unauthorized` for access-control checks), or remove/merge a
+/// dead or redundant one to make room.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -44,12 +51,6 @@ pub enum AjoError {
     /// Member doesn't have enough balance.
     InsufficientBalance = 12,
 
-    /// The token transfer didn't go through.
-    TransferFailed = 13,
-
-    /// This group has no members initialized.
-    NoMembers = 14,
-
     /// Only the creator or authorized members can do this.
     Unauthorized = 15,
 
@@ -67,12 +68,6 @@ pub enum AjoError {
     
     /// The contract is currently paused and cannot execute this operation.
     ContractPaused = 21,
-    
-    /// Only the admin can pause the contract.
-    UnauthorizedPause = 22,
-    
-    /// Only the admin can unpause the contract.
-    UnauthorizedUnpause = 23,
 
     /// Contribution is too late - grace period has expired.
     GracePeriodExpired = 24,
@@ -116,14 +111,8 @@ pub enum AjoError {
     /// Cannot request refund before cycle deadline.
     CycleNotExpired = 37,
 
-    /// Token contract address is invalid or not found.
-    InvalidTokenAddress = 38,
-
     /// Contract has insufficient token balance for payout.
     InsufficientContractBalance = 39,
-
-    /// Token allowance is insufficient for transfer.
-    InsufficientAllowance = 40,
 
     /// Insurance claim not found or invalid.
     InvalidClaim = 41,
@@ -136,9 +125,6 @@ pub enum AjoError {
 
     /// Insurance pool for token not found.
     PoolNotFound = 44,
-
-    /// Invalid or unsupported payout ordering strategy.
-    InvalidStrategy = 45,
 
     /// Voting is not open for this group's payout strategy.
     VotingNotOpen = 46,
@@ -172,16 +158,7 @@ pub enum AjoError {
     /// This address has already voted on this dispute.
     AlreadyVotedOnDispute = 54,
 
-    /// The voting period for this dispute has ended.
-    VotingPeriodEndedDispute = 55,
-
-    /// The caller is not a member of the dispute's group.
-    NotDisputeMember = 56,
-
     // ── Reputation errors ─────────────────────────────────────────────────
-
-    /// No reputation record found for this member.
-    ReputationNotFound = 57,
 
     /// Member's credit score is below the group's minimum requirement.
     InsufficientCreditScore = 58,

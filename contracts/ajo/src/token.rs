@@ -14,8 +14,8 @@ use crate::errors::AjoError;
 /// # Returns
 /// `Ok(())` on successful transfer
 ///
-/// # Errors
-/// * `TransferFailed` - If the token transfer fails
+/// Traps (does not return an `AjoError`) if the underlying token transfer fails,
+/// since token clients propagate host-level errors rather than a `Result`.
 pub fn transfer_token(
     env: &Env,
     token_address: &Address,

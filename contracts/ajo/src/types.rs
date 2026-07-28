@@ -266,7 +266,12 @@ pub struct Dispute {
     pub votes_for_action: u32,
     pub votes_against_action: u32,
     pub proposed_resolution: DisputeResolution,
-    pub final_resolution: Option<DisputeResolution>,
+    /// Resolution actually applied once the dispute leaves `Open`/`Voting`.
+    /// Defaults to `NoAction` while the dispute is still unresolved - Soroban's
+    /// `#[contracttype]` int-enum representation can't be wrapped in `Option<T>`
+    /// (no `Into<ScVal>` impl for the `Option` blanket), so `NoAction` doubles
+    /// as the "not yet resolved" sentinel instead.
+    pub final_resolution: DisputeResolution,
 }
 
 #[contracttype]

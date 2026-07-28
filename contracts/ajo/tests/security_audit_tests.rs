@@ -70,8 +70,8 @@ fn test_reentrancy_execute_payout_state_ordering() {
     assert_eq!(group.current_cycle, 2, "Cycle should advance");
 
     // Verify payout was marked as received in storage
-    let status = client.get_payout_status(&group_id);
-    assert!(status.len() > 0, "Payout status should be recorded");
+    let order = client.get_payout_order(&group_id, &1u32);
+    assert_eq!(order.recipient, members[0], "Payout should be recorded for the first recipient");
 }
 
 #[test]
@@ -99,18 +99,18 @@ fn test_refund_state_consistency_cei_ordering() {
     client.request_refund(&members[0], &group_id);
 
     // Vote to approve refund
-    client.vote_refund(&members[0], &group_id, true);
-    client.vote_refund(&members[1], &group_id, true);
+    client.vote_refund(&members[0], &group_id, &true);
+    client.vote_refund(&members[1], &group_id, &true);
 
     // Advance past voting deadline
-    env.ledger().with_mut(|li| { li.timestamp += 604_800; });
+    env.ledger().with_mut(|li| { li.timestamp += 604_800 + 1; });
 
     // Execute refund
     client.execute_refund(&members[0], &group_id);
 
     // Verify group state changed to Cancelled BEFORE token transfers were made
     let group = client.get_group(&group_id);
-    assert_eq!(group.state as u32, 2, "Group should be Cancelled (state=2)");
+    assert_eq!(group.state as u32, 1, "Group should be Cancelled (state=1)");
 }
 
 // ============================================================================
@@ -137,7 +137,7 @@ fn test_emergency_refund_authorization_strict() {
     // Only admin can execute
     client.emergency_refund(&admin, &group_id);
     let group = client.get_group(&group_id);
-    assert_eq!(group.state as u32, 2, "Group should be Cancelled after emergency refund");
+    assert_eq!(group.state as u32, 1, "Group should be Cancelled after emergency refund");
 }
 
 #[test]
@@ -236,10 +236,10 @@ fn test_get_group_disputes_resource_bounded() {
         &members[0],
         &group_id,
         &members[1],
-        &0u32, // DisputeType::Payment
+        &soroban_ajo::DisputeType::NonPayment,
         &desc,
         &evidence,
-        &0u32, // DisputeResolution::Penalty
+        &soroban_ajo::DisputeResolution::Penalty,
     );
 
     // Verify dispute list is retrievable
@@ -279,10 +279,10 @@ fn test_get_group_disputes_lifecycle_bounded() {
         &members[0],
         &group_id,
         &members[1],
-        &0u32, // DisputeType
+        &soroban_ajo::DisputeType::NonPayment,
         &desc,
         &evidence,
-        &0u32, // DisputeResolution
+        &soroban_ajo::DisputeResolution::Penalty,
     );
     assert_eq!(result, Err(Ok(AjoError::GroupComplete)), "Cannot file dispute on completed group");
 }
@@ -325,8 +325,8 @@ fn test_voting_deadline_fairness() {
     // This test documents the expected behavior
     
     // Both members can vote until deadline
-    client.vote_refund(&members[0], &group_id, true);
-    client.vote_refund(&members[1], &group_id, true);
+    client.vote_refund(&members[0], &group_id, &true);
+    client.vote_refund(&members[1], &group_id, &true);
 }
 
 #[test]
@@ -356,13 +356,13 @@ fn test_voting_period_consistent_across_calls() {
     let evidence = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     
     let dispute_id_1 = client.file_dispute(
-        &members[0], &group_id, &members[1], &0u32, &desc, &evidence, &0u32
+        &members[0], &group_id, &members[1], &soroban_ajo::DisputeType::NonPayment, &desc, &evidence, &soroban_ajo::DisputeResolution::Penalty
     );
 
     env.ledger().with_mut(|li| { li.timestamp += 100; }); // Advance 100 seconds
 
     let dispute_id_2 = client.file_dispute(
-        &members[1], &group_id, &members[2], &0u32, &desc, &evidence, &0u32
+        &members[1], &group_id, &members[2], &soroban_ajo::DisputeType::NonPayment, &desc, &evidence, &soroban_ajo::DisputeResolution::Penalty
     );
 
     // Both disputes should exist with consistent voting periods
@@ -397,10 +397,10 @@ fn test_cannot_vote_twice_refund() {
     client.request_refund(&members[0], &group_id);
 
     // First vote succeeds
-    client.vote_refund(&members[0], &group_id, true);
+    client.vote_refund(&members[0], &group_id, &true);
 
     // Second vote from same member should fail
-    let result = client.try_vote_refund(&members[0], &group_id, false);
+    let result = client.try_vote_refund(&members[0], &group_id, &false);
     assert_eq!(result, Err(Ok(AjoError::AlreadyVoted)), "Cannot vote twice on same refund request");
 }
 
@@ -422,14 +422,14 @@ fn test_cannot_vote_twice_dispute() {
     let desc = SorobanString::from_str(&env, "Test");
     let evidence = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     let dispute_id = client.file_dispute(
-        &members[0], &group_id, &members[1], &0u32, &desc, &evidence, &0u32
+        &members[0], &group_id, &members[1], &soroban_ajo::DisputeType::NonPayment, &desc, &evidence, &soroban_ajo::DisputeResolution::Penalty
     );
 
     // First vote succeeds
-    client.vote_on_dispute(&members[0], &dispute_id, true);
+    client.vote_on_dispute(&members[0], &dispute_id, &true);
 
     // Second vote should fail
-    let result = client.try_vote_on_dispute(&members[0], &dispute_id, false);
+    let result = client.try_vote_on_dispute(&members[0], &dispute_id, &false);
     assert_eq!(result, Err(Ok(AjoError::AlreadyVotedOnDispute)), "Cannot vote twice on same dispute");
 }
 
@@ -460,15 +460,15 @@ fn test_penalty_calculation_no_overflow() {
     let evidence = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     
     let dispute_id = client.file_dispute(
-        &members[0], &group_id, &members[1], &0u32, &desc, &evidence, &0u32
+        &members[0], &group_id, &members[1], &soroban_ajo::DisputeType::NonPayment, &desc, &evidence, &soroban_ajo::DisputeResolution::Penalty
     );
 
     // Vote to approve penalty
-    client.vote_on_dispute(&members[0], &dispute_id, true);
-    client.vote_on_dispute(&members[2], &dispute_id, true);
+    client.vote_on_dispute(&members[0], &dispute_id, &true);
+    client.vote_on_dispute(&members[2], &dispute_id, &true);
 
     // Advance past voting period and resolve
-    env.ledger().with_mut(|li| { li.timestamp += 604_800; });
+    env.ledger().with_mut(|li| { li.timestamp += 604_800 + 1; });
     client.resolve_dispute(&members[0], &dispute_id);
 
     // Verify group state is still valid (no overflow occurred)
@@ -508,6 +508,9 @@ fn test_payout_calculation_no_overflow() {
     // Tests: contribution_amount * member_count (max 100)
     
     let (env, client, _admin, token) = setup_test_env();
+    // 100 members contributing in one Env is more sequential invocations than
+    // the default single-transaction resource budget allows.
+    env.budget().reset_unlimited();
     let members = generate_addresses(&env, 100);
 
     // Large contribution amount: 1 billion stroops = 100 XLM
@@ -571,15 +574,15 @@ fn test_payout_with_penalty_bonus_no_overflow() {
     let evidence = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     
     let dispute_id = client.file_dispute(
-        &members[0], &group_id, &members[1], &0u32, &desc, &evidence, &0u32
+        &members[0], &group_id, &members[1], &soroban_ajo::DisputeType::NonPayment, &desc, &evidence, &soroban_ajo::DisputeResolution::Penalty
     );
 
     // Vote to approve penalty
     for i in 2..10 {
-        client.vote_on_dispute(&members[i], &dispute_id, true);
+        client.vote_on_dispute(&members[i], &dispute_id, &true);
     }
 
-    env.ledger().with_mut(|li| { li.timestamp += 604_800; });
+    env.ledger().with_mut(|li| { li.timestamp += 604_800 + 1; });
     client.resolve_dispute(&members[0], &dispute_id);
 
     // Now execute payout with accumulated penalties

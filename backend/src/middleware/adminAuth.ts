@@ -46,6 +46,35 @@ const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
   ],
 };
 
+/**
+ * Verifies an admin JWT and returns the resolved AdminUser (with permissions).
+ * Shared by the Express `adminAuth` middleware and the GraphQL context builder
+ * so both API surfaces enforce identical admin authorization.
+ *
+ * @throws if the token is missing, expired, invalid, or not an admin token.
+ */
+export function verifyAdminToken(token: string): AdminUser {
+  const secret = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET!;
+
+  const decoded = jwt.verify(token, secret) as {
+    id: string;
+    email: string;
+    role: AdminRole;
+    isAdmin: boolean;
+  };
+
+  if (!decoded.isAdmin) {
+    throw new Error('Not an admin account');
+  }
+
+  return {
+    id: decoded.id,
+    email: decoded.email,
+    role: decoded.role,
+    permissions: ROLE_PERMISSIONS[decoded.role] || [],
+  };
+}
+
 export function adminAuth(requiredPermission?: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -55,29 +84,10 @@ export function adminAuth(requiredPermission?: string) {
       }
 
       const token = authHeader.split(' ')[1];
-      const secret = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET!;
+      const admin = verifyAdminToken(token);
+      req.admin = admin;
 
-      const decoded = jwt.verify(token, secret) as {
-        id: string;
-        email: string;
-        role: AdminRole;
-        isAdmin: boolean;
-      };
-
-      if (!decoded.isAdmin) {
-        return res.status(403).json({ error: 'Not an admin account' });
-      }
-
-      const permissions = ROLE_PERMISSIONS[decoded.role] || [];
-
-      req.admin = {
-        id: decoded.id,
-        email: decoded.email,
-        role: decoded.role,
-        permissions,
-      };
-
-      if (requiredPermission && !permissions.includes(requiredPermission)) {
+      if (requiredPermission && !admin.permissions.includes(requiredPermission)) {
         return res.status(403).json({
           error: 'Insufficient permissions',
           required: requiredPermission,
@@ -86,6 +96,9 @@ export function adminAuth(requiredPermission?: string) {
 
       next();
     } catch (err) {
+      if (err instanceof Error && err.message === 'Not an admin account') {
+        return res.status(403).json({ error: err.message });
+      }
       return res.status(401).json({ error: 'Invalid or expired admin token' });
     }
   };
