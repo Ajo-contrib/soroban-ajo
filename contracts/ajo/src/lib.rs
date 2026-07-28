@@ -23,8 +23,6 @@ mod token;
 mod types;
 mod utils;
 mod insurance;
-mod loan;
-mod emergency;
 pub mod multisig;
 
 pub use contract::AjoContract;
@@ -40,3 +38,4 @@ pub use types::{GroupTemplate, TemplateConfig};
 pub use types::{
     ReputationScore, ReputationTier, CreditScoreSnapshot, PaymentHistoryEntry, ScoreChangeReason,
 };
+pub use types::{ClaimStatus, InsuranceClaim, InsurancePool};

@@ -1,4 +1,4 @@
-use soroban_sdk::{symbol_short, Env};
+use soroban_sdk::{symbol_short, Address, Env};
 
 use crate::errors::AjoError;
 use crate::storage;
@@ -83,25 +83,30 @@ pub fn ensure_not_paused(env: &Env) -> Result<(), AjoError> {
 ///
 /// # Arguments
 /// * `env` - The contract environment used to verify admin and set pause state
+/// * `caller` - Address invoking the pause; must match the stored admin
 ///
 /// # Returns
 /// * `Ok(())` if the pause was successful
-/// * `Err(AjoError::UnauthorizedPause)` if the caller is not the admin
+/// * `Err(AjoError::Unauthorized)` if the caller is not the admin
 ///
 /// # Authorization
-/// This function requires admin authentication via `require_auth()`. The admin
-/// address is retrieved from instance storage using `storage::get_admin()`.
+/// Checked two ways: `caller` must equal the stored admin address (so a
+/// mismatched caller is rejected even if `require_auth()` alone would have let
+/// it through, e.g. under test tooling that mocks every address's auth), and
+/// `caller.require_auth()` still enforces a real signature on a live network.
 ///
 /// # Idempotency
 /// Calling pause when already paused is safe and will succeed without error.
-pub fn pause(env: &Env) -> Result<(), AjoError> {
-    // Get admin and verify authorization
-    let admin = storage::get_admin(env).ok_or(AjoError::UnauthorizedPause)?;
-    admin.require_auth();
-    
+pub fn pause(env: &Env, caller: &Address) -> Result<(), AjoError> {
+    let admin = storage::get_admin(env).ok_or(AjoError::Unauthorized)?;
+    if *caller != admin {
+        return Err(AjoError::Unauthorized);
+    }
+    caller.require_auth();
+
     // Set paused state
     set_paused(env, true);
-    
+
     Ok(())
 }
 
@@ -119,14 +124,17 @@ pub fn pause(env: &Env) -> Result<(), AjoError> {
 ///
 /// # Arguments
 /// * `env` - The contract environment used to verify admin and clear pause state
+/// * `caller` - Address invoking the unpause; must match the stored admin
 ///
 /// # Returns
 /// * `Ok(())` if the unpause was successful
-/// * `Err(AjoError::UnauthorizedUnpause)` if the caller is not the admin
+/// * `Err(AjoError::Unauthorized)` if the caller is not the admin
 ///
 /// # Authorization
-/// This function requires admin authentication via `require_auth()`. The admin
-/// address is retrieved from instance storage using `storage::get_admin()`.
+/// Checked two ways: `caller` must equal the stored admin address (so a
+/// mismatched caller is rejected even if `require_auth()` alone would have let
+/// it through, e.g. under test tooling that mocks every address's auth), and
+/// `caller.require_auth()` still enforces a real signature on a live network.
 ///
 /// # Idempotency
 /// Calling unpause when already unpaused is safe and will succeed without error.
@@ -134,13 +142,15 @@ pub fn pause(env: &Env) -> Result<(), AjoError> {
 /// # Data Safety
 /// Unpausing does not modify any stored data. All groups, contributions, and
 /// payouts remain exactly as they were before the pause.
-pub fn unpause(env: &Env) -> Result<(), AjoError> {
-    // Get admin and verify authorization
-    let admin = storage::get_admin(env).ok_or(AjoError::UnauthorizedUnpause)?;
-    admin.require_auth();
-    
+pub fn unpause(env: &Env, caller: &Address) -> Result<(), AjoError> {
+    let admin = storage::get_admin(env).ok_or(AjoError::Unauthorized)?;
+    if *caller != admin {
+        return Err(AjoError::Unauthorized);
+    }
+    caller.require_auth();
+
     // Clear paused state
     set_paused(env, false);
-    
+
     Ok(())
 }

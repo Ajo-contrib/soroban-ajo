@@ -178,10 +178,9 @@ pub fn is_within_grace_period(group: &crate::types::Group, current_time: u64) ->
 /// returned so the caller can execute the token transfer immediately.
 ///
 /// # Errors
-/// * [`AjoError::NoEligibleMembers`] — all members have already been paid, or
-///   the internal members list is empty.
-/// * [`AjoError::NoMembers`] — used only for Sequential when `payout_index`
-///   points beyond the members list (should never happen in practice).
+/// * [`AjoError::NoEligibleMembers`] — all members have already been paid, the
+///   internal members list is empty, or (for Sequential) `payout_index` points
+///   beyond the members list (should never happen in practice).
 pub fn determine_next_recipient(env: &Env, group: &Group) -> Result<Address, AjoError> {
     let recipient = preview_next_recipient(env, group)?;
 
@@ -216,7 +215,7 @@ fn select_sequential(group: &Group) -> Result<Address, AjoError> {
     group
         .members
         .get(group.payout_index)
-        .ok_or(AjoError::NoMembers)
+        .ok_or(AjoError::NoEligibleMembers)
 }
 
 /// Selects a random eligible member using ledger sequence and timestamp as
