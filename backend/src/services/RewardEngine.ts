@@ -6,6 +6,14 @@ import { FraudDetector } from './FraudDetector';
 type Reward = Record<string, any>;
 
 /**
+ * Interface satisfied by both FraudDetector (rule-only) and FraudOrchestrator
+ * (ensemble). RewardEngine only needs shouldBlockReward.
+ */
+export interface RewardFraudGate {
+  shouldBlockReward(userId: string): Promise<boolean>;
+}
+
+/**
  * Core engine for reward calculation, distribution, and management
  */
 export class RewardEngine {
@@ -13,7 +21,7 @@ export class RewardEngine {
 
   constructor(
     private prisma: PrismaClient,
-    private fraudDetector: FraudDetector
+    private fraudDetector: RewardFraudGate
   ) {}
 
   /**
