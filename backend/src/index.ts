@@ -196,7 +196,6 @@ async function bootstrap() {
       error: err instanceof Error ? err.message : String(err),
     })
   })
-})
 
   // Graceful shutdown
   const shutdown = async () => {
@@ -214,15 +213,11 @@ async function bootstrap() {
 
     stopScheduler()
     await stopWorkers()
+    blockchainListener.stop()
     // give a short delay in case there are pending callbacks
     setTimeout(() => process.exit(0), 100)
   }
 
-  stopScheduler()
-  await stopWorkers()
-  blockchainListener.stop()
-  // give a short delay in case there are pending callbacks
-  setTimeout(() => process.exit(0), 100)
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
 }
