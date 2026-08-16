@@ -35,6 +35,20 @@ Quick commands:
 - `npm run db:studio` - Open database GUI
 - `npm run db:migrate` - Create migration
 
+### Database Migrations
+
+This project uses **Prisma Migrations** for schema management. For detailed information on migration strategy, rollback procedures, and emergency runbooks, see:
+
+**📋 [docs/database-migration-strategy.md](docs/database-migration-strategy.md)**
+
+**Quick reference:**
+- `npm run db:migrate` - Apply pending migrations (development)
+- `npm run db:migrate:deploy` - Apply migrations in production (idempotent, use in CI/CD)
+- `npm run db:migrate:reset` - ⚠️ **DESTRUCTIVE** — Reset database to initial state (development only)
+- `npm run db:rollback` - See emergency rollback procedures in migration strategy doc
+
+**Important:** All schema changes must include a corresponding down migration for rollback capability. See [migration strategy](docs/database-migration-strategy.md#pre-migration-checklist) for the PR review checklist.
+
 ## 📁 Project Structure
 
 ```

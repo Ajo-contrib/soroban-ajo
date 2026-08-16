@@ -19,6 +19,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:reset": "prisma migrate reset",
+    "db:rollback": "echo '⚠️  See docs/database-migration-strategy.md#emergency-rollback-runbook for rollback procedures' && exit 1",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "generate-sdk": "tsx scripts/generate-sdk.ts",
