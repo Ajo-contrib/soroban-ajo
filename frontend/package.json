@@ -44,7 +44,8 @@
     "recharts": "^2.10.0",
     "socket.io-client": "^4.8.3",
     "stellar-sdk": "^12.0.0",
-    "zustand": "^4.4.0"
+    "zustand": "^4.4.0",
+    "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
     "@axe-core/puppeteer": "^4.11.0",
