@@ -81,9 +81,9 @@ Maintainers will assign it to you within 24 hours.
 ```bash
 cd contracts/ajo
 # Make your changes
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
 cargo test
-cargo clippy
-cargo fmt
 ```
 
 **For Documentation:**
@@ -153,8 +153,8 @@ Before submitting your PR, ensure:
 
 - [ ] Code builds without errors
 - [ ] All tests pass (`cargo test`)
-- [ ] Code is formatted (`cargo fmt`)
-- [ ] No clippy warnings (`cargo clippy`)
+- [ ] Code is formatted (`cargo fmt --all -- --check`)
+- [ ] No clippy warnings (`cargo clippy --all-targets -- -D warnings`) **← CI GATE**
 - [ ] PR message closes the issue e.g #closes issue 20
 - [ ] Commit messages follow conventional commits
 - [ ] PR description explains what and why
@@ -219,6 +219,68 @@ pub fn create_group(
 - Keep functions focused (single responsibility)
 - Handle all error cases explicitly
 - Write tests for public functions
+
+### Clippy Lints (CI Gate)
+
+All Rust code must pass `cargo clippy --all-targets -- -D warnings`. This is enforced in CI.
+
+**Common clippy patterns to watch for:**
+
+```rust
+// ❌ DON'T: Needless clone
+function_call(value.clone())  // if value is not used after
+
+// ✅ DO: Pass by reference or move
+function_call(value)
+
+// ❌ DON'T: Unneeded checked arithmetic without handling
+let result = a.checked_add(b).unwrap_or(0);  // silently caps at 0?
+
+// ✅ DO: Use appropriate arithmetic
+let result = a.checked_add(b).expect("overflow");  // or use saturating_add if correct
+let result = a.saturating_add(b);
+
+// ❌ DON'T: Redundant closure
+.map(|x| x.to_string())
+
+// ✅ DO: Use method reference
+.map(ToString::to_string)
+
+// ❌ DON'T: Unused variables
+let result = some_call();  // if result is never used
+
+// ✅ DO: Remove or prefix with underscore
+let _result = some_call();  // or just call some_call();
+
+// ❌ DON'T: Dead code without explanation
+fn unused_helper() { ... }
+
+// ✅ DO: Add comment or #[allow(dead_code)]
+#[allow(dead_code)]
+/// This helper is used by tests and future features
+fn unused_helper() { ... }
+```
+
+**Before submitting a PR with Rust changes:**
+
+```bash
+cd contracts/ajo
+
+# Run all three checks locally — CI will enforce all three:
+cargo fmt --all -- --check      # formatting
+cargo clippy --all-targets -- -D warnings  # lints (CI gate)
+cargo test --workspace          # tests
+```
+
+If clippy reports any warnings, fix them before pushing. Warnings are treated as errors in CI (`-D warnings`).
+
+If you believe a warning is a false positive, add a comment explaining why:
+
+```rust
+#[allow(clippy::specific_lint)]
+// REASON: This pattern is intentional because...
+let value = some_operation();
+```
 
 ### Documentation
 
