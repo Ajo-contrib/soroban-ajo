@@ -1,0 +1,253 @@
+name: 🩺 Automated Health Check
+
+on:
+  schedule:
+    - cron: '17 6 * * *' # Daily at ~06:17 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  NODE_VERSION: '20'
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: '1'
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # Contracts (Rust): native build, tests, WASM release build
+  # ────────────────────────────────────────────────────────────────
+  contracts:
+    name: Contracts (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'contracts/ajo -> target'
+
+      - name: Build contracts (native)
+        id: build
+        working-directory: contracts/ajo
+        run: |
+          set +e
+          cargo build 2>&1 | tee /tmp/contracts-build.log
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Test contracts
+        id: test
+        working-directory: contracts/ajo
+        run: |
+          set +e
+          cargo test 2>&1 | tee /tmp/contracts-test.log
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Build WASM (release)
+        id: wasm
+        working-directory: contracts/ajo
+        run: |
+          set +e
+          cargo build --target wasm32-unknown-unknown --release 2>&1 | tee /tmp/contracts-wasm.log
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Collect contract results
+        if: always()
+        run: |
+          mkdir -p /tmp/health-results
+
+          # Count compiler error lines (e.g. "error[E0433]:" / "error:") in a log.
+          count_errors() {
+            [ -f "$1" ] || { echo 0; return; }
+            grep -cE '^error(\[|:)' "$1" || true
+          }
+          # Count failed unit tests across "N failed" summary lines.
+          count_failed_tests() {
+            [ -f "$1" ] || { echo 0; return; }
+            grep -oE '[0-9]+ failed' "$1" | grep -oE '[0-9]+' | awk '{ s += $1 } END { print s + 0 }'
+          }
+
+          BUILD_ERRORS=$(count_errors /tmp/contracts-build.log)
+          WASM_ERRORS=$(count_errors /tmp/contracts-wasm.log)
+          # Prefer failed-test count; fall back to compiler errors if compilation failed.
+          TEST_ERRORS=$(count_failed_tests /tmp/contracts-test.log)
+          if [ "${TEST_ERRORS:-0}" -eq 0 ] && [ "${{ steps.test.outcome }}" = "failure" ]; then
+            TEST_ERRORS=$(count_errors /tmp/contracts-test.log)
+          fi
+
+          cat > /tmp/health-results/contracts.json << EOF
+          {
+            "build_native": "${{ steps.build.outcome }}",
+            "build_native_errors": "${BUILD_ERRORS:-0}",
+            "tests": "${{ steps.test.outcome }}",
+            "tests_errors": "${TEST_ERRORS:-0}",
+            "build_wasm": "${{ steps.wasm.outcome }}",
+            "build_wasm_errors": "${WASM_ERRORS:-0}"
+          }
+          EOF
+          cat /tmp/health-results/contracts.json
+
+      - name: Upload contract results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-contracts
+          path: /tmp/health-results/contracts.json
+          retention-days: 7
+
+  # ────────────────────────────────────────────────────────────────
+  # Frontend: TypeScript type check (npx tsc --noEmit)
+  # ────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies (workspace root)
+        run: npm ci
+
+      - name: Type check
+        id: type_check
+        run: |
+          set +e
+          cd frontend
+          npx tsc --noEmit 2>&1 | tee /tmp/frontend-tsc.log
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Collect frontend results
+        if: always()
+        run: |
+          mkdir -p /tmp/health-results
+          ERROR_COUNT=$(grep -c "error TS" /tmp/frontend-tsc.log || true)
+          cat > /tmp/health-results/frontend.json << EOF
+          {
+            "type_check": "${{ steps.type_check.outcome }}",
+            "type_check_errors": "${ERROR_COUNT:-0}"
+          }
+          EOF
+          cat /tmp/health-results/frontend.json
+
+      - name: Upload frontend results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-frontend
+          path: /tmp/health-results/frontend.json
+          retention-days: 7
+
+  # ────────────────────────────────────────────────────────────────
+  # Backend: TypeScript type check (npx tsc --noEmit)
+  # ────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies (workspace root)
+        run: npm ci
+
+      - name: Type check
+        id: type_check
+        run: |
+          set +e
+          cd backend
+          npx tsc --noEmit 2>&1 | tee /tmp/backend-tsc.log
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Collect backend results
+        if: always()
+        run: |
+          mkdir -p /tmp/health-results
+          ERROR_COUNT=$(grep -c "error TS" /tmp/backend-tsc.log || true)
+          cat > /tmp/health-results/backend.json << EOF
+          {
+            "type_check": "${{ steps.type_check.outcome }}",
+            "type_check_errors": "${ERROR_COUNT:-0}"
+          }
+          EOF
+          cat /tmp/health-results/backend.json
+
+      - name: Upload backend results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-backend
+          path: /tmp/health-results/backend.json
+          retention-days: 7
+
+  # ────────────────────────────────────────────────────────────────
+  # Report: create or update the single tracking issue
+  # ────────────────────────────────────────────────────────────────
+  report:
+    name: Update Health Issue
+    needs: [contracts, frontend, backend]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Non-fatal so a missing artifact becomes a "skipped" check rather than
+      # failing the whole report.
+      - name: Download contract results
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: health-contracts
+          path: /tmp/health-results
+
+      - name: Download frontend results
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: health-frontend
+          path: /tmp/health-results
+
+      - name: Download backend results
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: health-backend
+          path: /tmp/health-results
+
+      - name: Create or update tracking issue
+        run: node scripts/health-check-report.js --results /tmp/health-results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}

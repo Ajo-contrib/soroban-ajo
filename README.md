@@ -131,6 +131,34 @@ npm run lint             # ESLint, frontend + backend
 npm run test:contracts   # Rust contract tests
 ```
 
+## Automated Health Checks
+
+The repository includes an automated health-check workflow that runs daily at ~06:17 UTC (and can be triggered manually from the Actions tab). It performs the same checks a maintainer would run manually:
+
+- **Smart Contracts**: native build (`cargo build`), `cargo test`, and WASM release build (`cargo build --target wasm32-unknown-unknown --release`)
+- **Frontend**: TypeScript type check (`npx tsc --noEmit`)
+- **Backend**: TypeScript type check (`npx tsc --noEmit`)
+
+Results are posted to a single tracking issue titled **"🩺 Automated Health Check Report"**. The workflow:
+
+1. Creates the tracking issue on first run
+2. Updates the same issue on subsequent runs (no issue spam)
+3. Reports pass/fail status and error counts for each check
+4. Pings the repository owner with an alert comment when a regression is detected
+
+To run the health checks locally:
+
+```bash
+# Run the checks and generate result files
+# (see .github/workflows/health-check.yml for the exact commands)
+
+# Preview the tracking issue report without posting it
+node scripts/health-check-report.js --dry-run --results /path/to/results
+
+# Post/update the tracking issue
+node scripts/health-check-report.js --results /path/to/results --token <GITHUB_TOKEN> --repo owner/repo
+```
+
 ## Deployment
 
 - **Contracts**: `stellar contract deploy` against testnet or mainnet (see [Smart Contract Documentation](docs/SMART_CONTRACT_DOCUMENTATION.md))
