@@ -12,7 +12,7 @@ import HelpPanel from '@/components/help/HelpPanel'
 import { ToastProvider } from '@/components/toast'
 import { initSentryClient } from '@/config/sentry'
 import { initGoogleAnalytics, trackWebVital } from '@/utils/googleAnalytics'
-import { observeWebVitals, observeResourceTiming, measurePageLoad } from '@/utils/monitoring'
+import { observeWebVitals, observeResourceTiming, measurePageLoad, WebVitalsMetric } from '@/utils/monitoring'
 
 function OnboardingInitializer() {
   const startOnboardingIfNew = useOnboarding((s) => s.startOnboardingIfNew)
@@ -29,7 +29,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     initGoogleAnalytics()
 
     // Observe Core Web Vitals — forward to GA4 as well
-    observeWebVitals((metric) => {
+    observeWebVitals((metric: WebVitalsMetric) => {
       trackWebVital(metric.name, metric.value, metric.rating)
     })
 
