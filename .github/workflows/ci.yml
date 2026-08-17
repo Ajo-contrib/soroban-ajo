@@ -96,10 +96,36 @@ jobs:
           path: backend/dist
           retention-days: 7
 
-  # Job 3: Smart Contract Build
+  # Job 3: Smart Contract Linting & Format Check
+  contract-lint:
+    name: Contract Lint & Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "contracts/ajo -> target"
+
+      - name: Check Rust formatting
+        run: cd contracts/ajo && cargo fmt --all -- --check
+
+      - name: Run clippy lints
+        run: cd contracts/ajo && cargo clippy --all-targets -- -D warnings
+
+  # Job 4: Smart Contract Build
   contracts:
     name: Build Smart Contracts
     runs-on: ubuntu-latest
+    needs: contract-lint
 
     steps:
       - name: Checkout code
@@ -158,7 +184,7 @@ jobs:
     name: PR Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    needs: [lint-and-typecheck, build, contracts]
+    needs: [lint-and-typecheck, build, contract-lint, contracts]
 
     steps:
       - name: Checkout code
