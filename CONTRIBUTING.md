@@ -159,6 +159,7 @@ Before submitting your PR, ensure:
 - [ ] Commit messages follow conventional commits
 - [ ] PR description explains what and why
 - [ ] Linked to related issue (if applicable)
+- [ ] **Contract changelog** (`contracts/ajo/CHANGELOG.md`): an entry added when the change affects `contracts/ajo/types.rs` or `contracts/ajo/errors.rs`, **or** the contributor has determined no changelog entry is needed
 
 ## 📝 PR Description Template
 
@@ -186,6 +187,7 @@ Add screenshots for UI changes
 - [ ] Tests pass
 - [ ] Code formatted
 - [ ] Documentation updated
+- [ ] `contracts/ajo/CHANGELOG.md` updated (if `types.rs` or `errors.rs` changed)
 ```
 
 ## 🎨 Code Style
