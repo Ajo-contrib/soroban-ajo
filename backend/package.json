@@ -23,7 +23,8 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "generate-sdk": "tsx scripts/generate-sdk.ts",
-    "seed:gamification": "tsx scripts/seed-gamification.ts"
+    "seed:gamification": "tsx scripts/seed-gamification.ts",
+    "dead-code": "knip"
   },
   "dependencies": {
     "@apollo/server": "^4.11.0",
@@ -102,6 +103,7 @@
     "eslint": "^8.55.0",
     "fast-check": "^4.6.0",
     "jest": "^29.7.0",
+    "knip": "^6.32.2",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
     "tsx": "^4.7.0",

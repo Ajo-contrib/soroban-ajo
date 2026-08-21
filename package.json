@@ -20,6 +20,7 @@
     "type-check": "npm run type-check:frontend && npm run type-check:backend",
     "type-check:frontend": "cd frontend && npm run type-check",
     "type-check:backend": "cd backend && npm run type-check",
+    "dead-code:backend": "cd backend && npm run dead-code",
     "test:contracts": "cd contracts/ajo && cargo test",
     "prepare": "npx husky install",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
@@ -30,8 +31,7 @@
     "depcheck": "^1.4.7",
     "husky": "^8.0.3",
     "lint-staged": "^15.2.0",
-    "prettier": "^3.2.0",
-    "ts-prune": "^0.10.3"
+    "prettier": "^3.2.0"
   },
   "workspaces": [
     "frontend",
@@ -41,6 +41,5 @@
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
   },
-  "dependencies": {
-  }
+  "dependencies": {}
 }

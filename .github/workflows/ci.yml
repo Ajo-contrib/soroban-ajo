@@ -113,7 +113,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "contracts/ajo -> target"
+          workspaces: 'contracts/ajo -> target'
 
       - name: Check Rust formatting
         run: cd contracts/ajo && cargo fmt --all -- --check
@@ -139,7 +139,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "contracts/ajo -> target"
+          workspaces: 'contracts/ajo -> target'
 
       - name: Install Stellar CLI
         uses: stellar-actions/install-stellar-cli@v2
@@ -158,6 +158,30 @@ jobs:
           name: contracts
           path: contracts/ajo/target/wasm32-unknown-unknown/release/*.wasm
           retention-days: 30
+
+  # Job: Dead Code Report (non-blocking, informational only)
+  dead-code-report:
+    name: Dead Code Report (Backend)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run dead code detection (knip)
+        run: |
+          echo "ℹ️  This is an informational report and does not fail the build."
+          echo "See backend/knip.json to tune entry points or ignore known false positives."
+          cd backend && npm run dead-code || true
 
   # Job 4: Security Audit
   security:
@@ -303,7 +327,6 @@ jobs:
               body: '🚀 Preview deployment ready! Configure your hosting provider for automatic preview deploys.'
             })
 
-
   # Job 7: Frontend & Backend Tests with Coverage
   tests-js:
     name: Frontend & Backend Tests
@@ -359,7 +382,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "contracts/ajo -> target"
+          workspaces: 'contracts/ajo -> target'
 
       - name: Install cargo-audit
         run: cargo install cargo-audit || echo "cargo-audit already installed"
