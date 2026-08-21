@@ -6,7 +6,12 @@
 import { analytics, trackUserAction } from './analytics'
 import { showNotification } from '../utils/notifications'
 import { cacheService, CacheTags } from './cache'
-import { httpRequest, interceptorManager } from '../utils/interceptors'
+import {
+  httpRequest,
+  interceptorManager,
+  HttpRequestConfig,
+  HttpResponse,
+} from '../utils/interceptors'
 import * as SorobanClient from 'stellar-sdk'
 import {
   requestAccess,
@@ -432,44 +437,31 @@ export interface SorobanService {
    *
    * @param config - Request configuration
    */
-  httpRequest: <T = any>(config: {
-    url: string
-    method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
-    headers?: Record<string, string>
-    body?: any
-    timeout?: number
-    retries?: number
-    cache?: boolean
-    cacheTTL?: number
-  }) => Promise<{
-    data: T
-    status: number
-    statusText: string
-    headers: Record<string, string>
-    duration: number
-    cached: boolean
-  }>
+  httpRequest: <T = any>(config: HttpRequestConfig) => Promise<HttpResponse<T>>
 
   /**
    * Add a custom request interceptor.
    *
    * @param interceptor - Request interceptor function
+   * @returns A function that removes the interceptor when called
    */
-  addRequestInterceptor: (interceptor: (config: any) => any | Promise<any>) => number
+  addRequestInterceptor: (interceptor: (config: any) => any | Promise<any>) => () => void
 
   /**
    * Add a custom response interceptor.
    *
    * @param interceptor - Response interceptor function
+   * @returns A function that removes the interceptor when called
    */
-  addResponseInterceptor: (interceptor: (response: any) => any | Promise<any>) => number
+  addResponseInterceptor: (interceptor: (response: any) => any | Promise<any>) => () => void
 
   /**
    * Add a custom error interceptor.
    *
    * @param interceptor - Error interceptor function
+   * @returns A function that removes the interceptor when called
    */
-  addErrorInterceptor: (interceptor: (error: any) => any | Promise<any>) => number
+  addErrorInterceptor: (interceptor: (error: any) => any | Promise<any>) => () => void
 }
 
 /** Performance mark names for DevTools / Performance API */
@@ -2199,16 +2191,7 @@ export const initializeSoroban = (): SorobanService => {
       })
     },
 
-    httpRequest: async <T = any>(config: {
-      url: string
-      method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
-      headers?: Record<string, string>
-      body?: any
-      timeout?: number
-      retries?: number
-      cache?: boolean
-      cacheTTL?: number
-    }) => {
+    httpRequest: async <T = any>(config: HttpRequestConfig) => {
       return await httpRequest<T>(config)
     },
 
