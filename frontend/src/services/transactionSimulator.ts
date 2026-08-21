@@ -1,4 +1,4 @@
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { SorobanRpc } from 'stellar-sdk';
 
 export interface SimulationResult {
   success: boolean;
