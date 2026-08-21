@@ -2260,6 +2260,15 @@ const HORIZON_URL = process.env.NEXT_PUBLIC_HORIZON_URL || 'https://horizon-test
 
 const horizonServer = new SorobanClient.Horizon.Server(HORIZON_URL)
 
+// ── Soroban RPC server (module-level for standalone helpers) ──────────────────
+// These mirror the values in initializeSoroban() but are accessible to
+// module-level exported functions that sit outside that closure.
+const MODULE_RPC_URL = process.env.NEXT_PUBLIC_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org'
+const MODULE_CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || ''
+const MODULE_NETWORK_PASSPHRASE =
+  process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015'
+const rpcServer = new SorobanClient.SorobanRpc.Server(MODULE_RPC_URL)
+
 // Is this a testnet deployment?
 export const IS_TESTNET =
   (process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015') ===
@@ -2347,8 +2356,9 @@ export async function simulateSorobanTransaction(
       process.env.NEXT_PUBLIC_SOROBAN_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015'
     ) as SorobanClient.Transaction
 
-    // Use the existing `server` (SorobanRpc.Server) declared at the top of soroban.ts
-    const simResult = await server.simulateTransaction(transaction)
+    // Use the module-level `rpcServer` (SorobanRpc.Server) — the `server`
+    // inside initializeSoroban() is not in scope for this module-level helper.
+    const simResult = await rpcServer.simulateTransaction(transaction)
 
     if (SorobanClient.SorobanRpc.Api.isSimulationError(simResult)) {
       return {
@@ -2492,7 +2502,7 @@ export async function getMemberPenaltyRecord(
   }
 
   try {
-    const contract = new SorobanClient.Contract(contractId)
+    const contract = new SorobanClient.Contract(MODULE_CONTRACT_ID)
     const account = new SorobanClient.Address(member)
 
     const result = await contract.call(
