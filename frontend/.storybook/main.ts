@@ -3,6 +3,7 @@ import type { StorybookConfig } from '@storybook/nextjs'
 /**
  * Storybook configuration for Next.js (#75)
  * Uses @storybook/nextjs for Next.js 14 (Image, Router, aliases, Tailwind).
+ *  * Uses @storybook/nextjs for Next.js 14 (Image, Router, aliases, Tailwind).....
  */
 const config: StorybookConfig = {
   stories: [
