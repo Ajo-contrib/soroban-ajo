@@ -145,7 +145,7 @@ jobs:
       - name: Run Contract Tests
         run: |
           cd contracts/ajo
-          cargo test --verbose
+          cargo test --locked --verbose
 
       - name: Upload Coverage Reports
         uses: codecov/codecov-action@v4
