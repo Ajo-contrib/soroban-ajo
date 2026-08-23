@@ -188,22 +188,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run Accessibility Linter
+      - name: Run jest-axe accessibility tests
         run: |
           cd frontend
-          npx eslint . --ext .tsx,.jsx --rule '{
-            "jsx-a11y/alt-text": "error",
-            "jsx-a11y/anchor-has-content": "error",
-            "jsx-a11y/aria-props": "error",
-            "jsx-a11y/aria-role": "error",
-            "jsx-a11y/role-has-required-aria-props": "error"
-          }' || echo "⚠️ Accessibility issues found"
-        continue-on-error: true
-
-      - name: Check for ARIA attributes
-        run: |
-          echo "🔍 Checking for accessibility attributes..."
-          git diff origin/${{ github.base_ref }}...HEAD -- '*.tsx' '*.jsx' | grep -E 'aria-|role=' || echo "⚠️ Consider adding ARIA attributes for better accessibility"
+          npm run test:a11y:ci
 
   # Job 5: Code Quality Checks
   quality-checks:
