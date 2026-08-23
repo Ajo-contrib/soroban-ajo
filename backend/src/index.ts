@@ -34,6 +34,7 @@ import {
   strictLimiter,
   publicReadLimiter,
   analyticsLimiter,
+  createUserLimiter,
 } from './middleware/rateLimiter'
 import { startWorkers, stopWorkers } from './jobs/jobWorkers'
 import { startScheduler, stopScheduler } from './cron/scheduler'
@@ -89,27 +90,27 @@ setupSwagger(app)
 app.use('/health', healthRouter)
 app.use('/api/versions', versionsRouter)
 app.use('/api/auth', strictLimiter, authRouter)
-app.use('/api/groups', publicReadLimiter, groupsRouter)
+app.use('/api/groups', publicReadLimiter, createUserLimiter(), groupsRouter)
 app.use('/api/webhooks', strictLimiter, webhooksRouter)
-app.use('/api/analytics', analyticsLimiter, analyticsRouter)
+app.use('/api/analytics', analyticsLimiter, createUserLimiter(), analyticsRouter)
 app.use('/api/email', emailRouter)
 app.use('/api/jobs', jobsRouter)
-app.use('/api/notifications', notificationsRouter)
-app.use('/api/verification', verificationRouter)
-app.use('/api/search', searchRouter)
+app.use('/api/notifications', createUserLimiter(), notificationsRouter)
+app.use('/api/verification', createUserLimiter(), verificationRouter)
+app.use('/api/search', createUserLimiter(), searchRouter)
 app.use('/api/members', membersRouter)
 app.use('/api/marketing', marketingRouter)
 app.use('/api/share', socialSharingRouter)
-app.use('/api/multisig', apiLimiter, multisigRouter)
+app.use('/api/multisig', apiLimiter, createUserLimiter(), multisigRouter)
 // app.use('/api/gamification', gamificationRouter) // Temporarily disabled due to missing auth middleware
 // app.use('/api/goals', goalsRouter) // Temporarily disabled due to type errors
 
 import { disputesRouter } from './routes/disputes'
-app.use('/api/disputes', disputesRouter)
+app.use('/api/disputes', createUserLimiter(), disputesRouter)
 
 // Fraud Detection (unified rule-based + ML ensemble)
 import { fraudRouter } from './routes/fraud'
-app.use('/api/fraud', fraudRouter)
+app.use('/api/fraud', createUserLimiter(), fraudRouter)
 
 // Templates
 import { templatesRouter } from './routes/templates'
@@ -121,15 +122,15 @@ app.use('/api/sagas', sagasRouter)
 
 // Audit logs
 import { auditRouter } from './routes/audit'
-app.use('/api/audit', auditRouter)
+app.use('/api/audit', createUserLimiter(), auditRouter)
 
 // Backups
 import { backupRouter } from './routes/backup'
-app.use('/api/backups', backupRouter)
+app.use('/api/backups', createUserLimiter(), backupRouter)
 
 // Payments
 import { paymentsRouter } from './routes/payments'
-app.use('/api/payments', paymentsRouter)
+app.use('/api/payments', createUserLimiter(), paymentsRouter)
 
 // Payment Webhooks (no auth required - verified by signature)
 import { paymentWebhooksRouter } from './routes/paymentWebhooks'
@@ -137,7 +138,7 @@ app.use('/api/webhooks/payments', paymentWebhooksRouter)
 
 // E2E Encryption key exchange — Issue #611
 import { e2eRouter } from './routes/e2e'
-app.use('/api/e2e', strictLimiter, e2eRouter)
+app.use('/api/e2e', strictLimiter, createUserLimiter(), e2eRouter)
 
 // Apollo Server's middleware can only be mounted after `server.start()`
 // resolves, so everything that must come after routing (the 404 catch-all,
