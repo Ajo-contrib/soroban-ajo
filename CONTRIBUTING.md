@@ -86,6 +86,12 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
+> **Touching `contracts/ajo/Cargo.toml` or `Cargo.lock`?** This crate has a
+> stricter, reviewed-bump-only dependency policy — never run bare
+> `cargo update` here. See
+> [`contracts/ajo/docs/DEPENDENCY_POLICY.md`](contracts/ajo/docs/DEPENDENCY_POLICY.md)
+> before changing dependency versions.
+
 **For Documentation:**
 - Use clear, concise language
 - Add code examples where helpful

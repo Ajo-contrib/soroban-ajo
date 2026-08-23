@@ -12,10 +12,15 @@ readme = "README.md"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-soroban-sdk = "21.0.0"
+# Pinned to an exact version (not a caret range) by policy: this crate handles
+# real financial value, and the SDK's `#[contracterror]` macro plus its
+# transitive crypto dependencies (e.g. the rand/ed25519-dalek family) have a
+# history of subtle, version-sensitive behavior. Bumping requires an explicit,
+# reviewed PR that edits this line — see docs/DEPENDENCY_POLICY.md.
+soroban-sdk = "=21.7.7"
 
 [dev-dependencies]
-soroban-sdk = { version = "21.0.0", features = ["testutils"] }
+soroban-sdk = { version = "=21.7.7", features = ["testutils"] }
 proptest = "1.5.0"
 
 [profile.release]
