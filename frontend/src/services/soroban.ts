@@ -5,7 +5,7 @@
 
 import { analytics, trackUserAction } from './analytics'
 import { showNotification } from '../utils/notifications'
-import { cacheService, CacheTags } from './cache'
+import { cacheService, CacheKeys, CacheTags } from './cache'
 import {
   httpRequest,
   interceptorManager,
@@ -20,7 +20,12 @@ import {
   isAllowed,
   setAllowed,
 } from '@stellar/freighter-api'
-import { SorobanTransactionResponse } from '../types'
+import {
+  MemberPenaltyRecord,
+  PenaltyHistoryItem,
+  PenaltyStats,
+  SorobanTransactionResponse,
+} from '../types'
 
 // Cache TTL configurations (in milliseconds)
 const CACHE_TTL = {
@@ -2498,7 +2503,7 @@ export async function getMemberPenaltyRecord(
     }
 
     if (useCache) {
-      cacheService.set(cacheKey, penaltyRecord, 60 * 1000) // 1 minute cache
+      cacheService.set(cacheKey, penaltyRecord, { ttl: 60 * 1000 })
     }
 
     return penaltyRecord
@@ -2543,7 +2548,7 @@ export async function getGroupPenaltyStats(
       }
 
       if (useCache) {
-        cacheService.set(cacheKey, emptyStats, 60 * 1000)
+        cacheService.set(cacheKey, emptyStats, { ttl: 60 * 1000 })
       }
 
       return emptyStats
@@ -2569,7 +2574,7 @@ export async function getGroupPenaltyStats(
     }
 
     if (useCache) {
-      cacheService.set(cacheKey, stats, 60 * 1000)
+      cacheService.set(cacheKey, stats, { ttl: 60 * 1000 })
     }
 
     return stats
@@ -2630,7 +2635,7 @@ export async function getPenaltyHistory(
     ]
 
     if (useCache) {
-      cacheService.set(cacheKey, mockHistory, 2 * 60 * 1000) // 2 minute cache
+      cacheService.set(cacheKey, mockHistory, { ttl: 2 * 60 * 1000 })
     }
 
     return mockHistory.slice(0, limit)
@@ -2676,7 +2681,7 @@ export async function getUserPenaltyRecords(
     const penaltyRecords = await Promise.all(penaltyPromises)
 
     if (useCache) {
-      cacheService.set(cacheKey, penaltyRecords, 5 * 60 * 1000) // 5 minute cache
+      cacheService.set(cacheKey, penaltyRecords, { ttl: 5 * 60 * 1000 })
     }
 
     return penaltyRecords
