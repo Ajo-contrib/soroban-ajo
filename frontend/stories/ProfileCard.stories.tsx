@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { ProfileCard } from '@/components/ProfileCard'
 import type { UserProfile } from '@/types/profile'
+import { defaultEmailPreferences } from '@/types/profile'
 
 const defaultProfile: UserProfile = {
   address: 'GABC1234567890ABCDEF',
@@ -15,6 +16,7 @@ const defaultProfile: UserProfile = {
       payoutReminders: true,
       contributionReminders: true,
     },
+    emailNotifications: defaultEmailPreferences,
     privacy: {
       showProfile: true,
       showActivity: true,
