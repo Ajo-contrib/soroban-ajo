@@ -60,6 +60,26 @@ optional flag.
 - `package.json` — added `@socket.io/redis-adapter` (the only new
   dependency; `ioredis` was already present).
 
+## Reusing coordination for singleton workers
+
+The Socket.IO Redis adapter is the right primitive for fan-out, but it does
+not prevent every backend process from running a singleton worker. The
+blockchain listener uses the reusable `DistributedLock` in
+`src/services/distributedLock.ts` for this class of work:
+
+- The owner acquires `ajo:lock:blockchain-listener` with a random token and a
+  short Redis TTL before loading the checkpoint, back-filling, or opening SSE.
+- The owner renews the lease periodically. If renewal fails, it stops before
+  continuing to process events.
+- Shutdown releases the key only when the stored token still belongs to that
+  owner, so an expired lease cannot be deleted by a later process.
+
+Any future exactly-one-instance process should use the same lease rather than
+implementing its own `SET NX`, renewal, and token-safe release logic. The
+primitive is appropriate for crash recovery and failover; the durable database
+checkpoint and event idempotency guard remain the source of truth for replay
+safety.
+
 ## Sticky sessions
 
 **Not required.** Socket.IO only needs sticky sessions when a client's HTTP
