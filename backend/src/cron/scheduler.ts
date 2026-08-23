@@ -160,6 +160,15 @@ export function startScheduler(): void {
     })
   )
 
+  // Fraud model retraining — monthly after the review data has accumulated.
+  scheduledTasks.push(
+    cron.schedule('0 4 1 * *', async () => {
+      const { mlFraudDetectionService } = await import('../services/mlFraudDetectionService')
+      const result = await mlFraudDetectionService.retrainModel()
+      logger.info('Cron: fraud model retraining completed', { result })
+    })
+  )
+
   logger.info(`Cron scheduler started with ${scheduledTasks.length} scheduled tasks`)
 }
 
