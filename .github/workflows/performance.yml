@@ -72,25 +72,9 @@ jobs:
 
       - name: Check bundle sizes
         run: |
-          echo "=== Bundle Size Report ==="
-          if [ -d "frontend/.next/static/chunks" ]; then
-            echo "JS Chunks:"
-            find frontend/.next/static/chunks -name "*.js" -exec du -sh {} \; | sort -rh | head -20
-            
-            TOTAL=$(find frontend/.next/static -name "*.js" -exec du -b {} \; | awk '{sum+=$1} END {print sum}')
-            BUDGET=524288  # 512 KB in bytes
-            echo ""
-            echo "Total JS size: $(echo $TOTAL | awk '{printf "%.1f KB", $1/1024}')"
-            echo "Budget: 512 KB"
-            
-            if [ "$TOTAL" -gt "$BUDGET" ]; then
-              echo "⚠️ Bundle size exceeds budget!"
-            else
-              echo "✅ Bundle size within budget"
-            fi
-          else
-            echo "No build artifacts found (build may have failed)"
-          fi
+          echo "=== Bundle Size Check (build-time) ==="
+          cd frontend
+          npm run check:bundle
 
       - name: Upload bundle analysis
         if: always()

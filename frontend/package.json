@@ -11,6 +11,8 @@
     "lint:naming": "eslint --config .eslintrc.naming.js 'src/**/*.{ts,tsx}'",
     "lint:a11y": "eslint --config .eslintrc.a11y.json 'src/**/*.{ts,tsx}'",
     "type-check": "tsc --noEmit",
+    "check:bundle": "node scripts/check-bundle-size.mjs",
+    "build:check-bundle": "npm run build && npm run check:bundle",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:a11y": "node scripts/test-accessibility.js",
