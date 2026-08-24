@@ -1,7 +1,9 @@
 import { PrismaClient } from '@prisma/client'
 import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import { applyPlugin } from 'jspdf-autotable'
+
+applyPlugin(jsPDF)
 import * as fs from 'fs'
 import * as path from 'path'
 import { createModuleLogger } from '../utils/logger'
@@ -41,7 +43,7 @@ export class UserDataExportService {
   /**
    * Initiates a new data export request for a user.
    * Creates a 'pending' record and starts asynchronous processing.
-   * 
+   *
    * @param userId - Wallet address of the user requesting the export
    * @param request - Configuration for the export (format, data types, date range)
    * @returns Promise resolving to the initial ExportResult
@@ -100,9 +102,7 @@ export class UserDataExportService {
 
   private async gatherData(userId: string, request: UserExportRequest) {
     const { dataType, dateRange } = request
-    const dateFilter = dateRange
-      ? { createdAt: { gte: dateRange.start, lte: dateRange.end } }
-      : {}
+    const dateFilter = dateRange ? { createdAt: { gte: dateRange.start, lte: dateRange.end } } : {}
 
     const [userData, groupsData, transactionsData] = await Promise.all([
       dataType === 'user' || dataType === 'all' ? this.getUserData(userId) : null,
@@ -228,7 +228,16 @@ export class UserDataExportService {
 
     if (data.groups?.length) {
       const rows = [
-        ['Group ID', 'Group Name', 'Contribution Amount', 'Frequency', 'Max Members', 'Current Round', 'Active', 'Joined At'],
+        [
+          'Group ID',
+          'Group Name',
+          'Contribution Amount',
+          'Frequency',
+          'Max Members',
+          'Current Round',
+          'Active',
+          'Joined At',
+        ],
         ...data.groups.map((m: any) => [
           m.group.id,
           m.group.name,
@@ -333,7 +342,6 @@ export class UserDataExportService {
       doc.setFontSize(13)
       doc.text('User Profile', 14, y)
       y += 6
-
       ;(doc as any).autoTable({
         startY: y,
         head: [['Field', 'Value']],
@@ -354,11 +362,13 @@ export class UserDataExportService {
     }
 
     if (data.groups?.length) {
-      if (y > 220) { doc.addPage(); y = 20 }
+      if (y > 220) {
+        doc.addPage()
+        y = 20
+      }
       doc.setFontSize(13)
       doc.text('Groups', 14, y)
       y += 6
-
       ;(doc as any).autoTable({
         startY: y,
         head: [['Group Name', 'Contribution', 'Round', 'Active', 'Joined']],
@@ -376,11 +386,13 @@ export class UserDataExportService {
     }
 
     if (data.transactions?.length) {
-      if (y > 220) { doc.addPage(); y = 20 }
+      if (y > 220) {
+        doc.addPage()
+        y = 20
+      }
       doc.setFontSize(13)
       doc.text('Transactions', 14, y)
       y += 6
-
       ;(doc as any).autoTable({
         startY: y,
         head: [['Group', 'Amount', 'Round', 'Tx Hash', 'Date']],
@@ -416,7 +428,7 @@ export class UserDataExportService {
 
   /**
    * Permanently deletes an export record and its associated file from the filesystem.
-   * 
+   *
    * @param exportId - The unique ID of the export
    * @param userId - The wallet address of the owner (to verify ownership)
    */
@@ -433,12 +445,15 @@ export class UserDataExportService {
 
   /**
    * Retrieves file information for streaming an export to a client.
-   * 
+   *
    * @param exportId - The unique ID of the export
    * @param userId - The wallet address of the owner
    * @returns Promise resolving to the file path, MIME type, and filename, or null if not ready/found
    */
-  async streamExport(exportId: string, userId: string): Promise<{ filePath: string; mimeType: string; filename: string } | null> {
+  async streamExport(
+    exportId: string,
+    userId: string
+  ): Promise<{ filePath: string; mimeType: string; filename: string } | null> {
     const record = await this.prisma.dataExport.findFirst({ where: { id: exportId, userId } })
     if (!record || record.status !== 'completed' || !record.filePath) return null
     if (!fs.existsSync(record.filePath)) return null
