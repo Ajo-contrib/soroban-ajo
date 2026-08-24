@@ -219,3 +219,5 @@ export class AnalyticsService {
     return { id: 'job-123', ...config };
   }
 }
+
+export const analyticsService = new AnalyticsService()
