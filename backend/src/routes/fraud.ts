@@ -27,6 +27,33 @@ export const fraudRouter = Router()
  */
 
 /**
+ * POST /api/fraud/models/retrain
+ * Train and validate a candidate model from reviewed fraud outcomes.
+ */
+fraudRouter.post('/models/retrain', adminAuth(), async (_req, res: Response) => {
+  try {
+    const result = await fraudOrchestrator.retrainModel()
+    if (!result) return res.status(409).json({ error: 'At least 10 labeled review outcomes are required' })
+    res.json({ success: true, result })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * POST /api/fraud/models/:id/rollback
+ * Restore a previously retired model version.
+ */
+fraudRouter.post('/models/:id/rollback', adminAuth(), async (req, res: Response) => {
+  try {
+    await fraudOrchestrator.rollbackModel(req.params.id)
+    res.json({ success: true, modelId: req.params.id })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+/**
  * POST /api/fraud/analyze
  * Analyze a transaction for fraud patterns (admin / internal use).
  * Runs the ML anomaly detector against the given transaction.

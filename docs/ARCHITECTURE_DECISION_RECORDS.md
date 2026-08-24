@@ -16,6 +16,7 @@ This document contains all significant architectural decisions made for the Soro
 10. [ADR-010: Deployment Architecture](#adr-010-deployment-architecture)
 11. [ADR-011: Event Sourcing Scope and Its Relationship to Prisma and the Blockchain](#adr-011-event-sourcing-scope-and-its-relationship-to-prisma-and-the-blockchain)
 12. [ADR-012: Service Instantiation Pattern — Retire the DI Container](#adr-012-service-instantiation-pattern--retire-the-di-container)
+13. [ADR-013: Chat/Notification Delivery Guarantees Across a Brief WebSocket Disconnect](#adr-013-chatnotification-delivery-guarantees-across-a-brief-websocket-disconnect)
 
 ---
 
@@ -886,6 +887,120 @@ Create an ADR when:
 - [ ] Consequences identified
 - [ ] Related decisions noted
 - [ ] Team consensus achieved
+
+---
+
+## ADR-013: Chat/Notification Delivery Guarantees Across a Brief WebSocket Disconnect
+
+**Status**: Accepted
+**Date**: August 2026
+**Deciders**: Backend Team
+**Affected Components**: Backend (`backend/src/services/chatService.ts`, `backend/src/services/notificationService.ts`, `backend/src/workers/notificationWorker.ts`)
+
+### Context
+
+WebSocket delivery is not reliable by design — that's what makes it
+lightweight — and real mobile/flaky-network usage drops connections far more
+often than a stable development connection ever does. Socket.IO only
+delivers an emitted event to sockets connected *at emit time*: `new_message`
+and `notification` events broadcast while a client is between disconnect and
+reconnect are gone for that client unless something explicitly replays them.
+Issue #934 asked us to make that guarantee explicit — either implement
+replay, or document the accepted-loss tradeoff — rather than leave it an
+unstated assumption that surfaces as hard-to-reproduce "why didn't I get
+that notification/message" reports.
+
+Auditing the two real-time paths that share the same underlying Socket.IO/
+Redis-adapter `io` (see ADR on presence/chat scaling in `realtimePresence.ts`)
+turned up two separate problems, not one:
+
+1. **Chat messages** (`chatService.ts`) had no replay at all. `lastSeenAt` was
+   already tracked per `ChatParticipant` and updated on every (re)join, but
+   nothing read it back — it was write-only.
+2. **Realtime notification delivery** (`notificationWorker.ts`) was **already
+   completely broken**, independent of the reconnect-gap question: the
+   worker's `'push'`-channel branch called
+   `websocketService.sendToUser(userId, 'notification', {...})` — a method
+   that has never existed on `WebSocketService` (it only ever exposed
+   `init`). Every job on that channel threw, was caught, and pushed into a
+   local `errors` array that nothing surfaces to the caller. Since `'push'`
+   (and its `'websocket'` alias) is the default/most common channel across
+   `notificationService.send()`, `reminderService`, `groupsService`, etc.,
+   this meant realtime notification delivery had a 100% failure rate, not
+   just a delivery gap during reconnects.
+
+### Options Considered
+
+1. **Chat — document a bounded-loss tradeoff and ship nothing.** Rejected:
+   chat already has everything replay needs (`lastSeenAt` per participant,
+   `ChatMessage` persisted with `createdAt` and `deletedAt`) — implementing
+   the guarantee is a same-sized change to writing the tradeoff down, and a
+   real guarantee is strictly better for users than a documented gap.
+2. **Chat — a per-client outbox that replays missed messages on reconnect.**
+   Selected. `chatService.joinUserRooms` (which already runs on every
+   connect/reconnect, before `lastSeenAt` is refreshed) now fetches messages
+   created after the participant's previous `lastSeenAt` for each room and
+   emits them to that socket as `missed_messages`, capped at 200 messages
+   per room (`MISSED_MESSAGES_REPLAY_LIMIT`). A gap wider than the cap sets
+   `truncated: true` on the payload instead of silently dropping the excess —
+   the client falls back to the existing cursor-paginated
+   `GET /api/chat/rooms/:roomId/messages` for anything beyond that. A `null`
+   `lastSeenAt` (first-ever join) intentionally skips replay, since there's
+   no prior session to catch up from.
+3. **Notifications — build an equivalent per-notification outbox/replay.**
+   Considered but not needed: `GET /api/notifications` already reads
+   `ActivityFeed`, a durable, persisted history independent of the Socket.IO
+   layer or the BullMQ job queue — it already serves as the reconciliation
+   path for a client that reconnects after missing realtime events. Building
+   a second, parallel outbox for the same data would be redundant.
+4. **Notifications — leave the realtime path broken and only rely on
+   `ActivityFeed`.** Rejected: that would mean *zero* realtime delivery,
+   including for clients that were online the whole time — not the intended
+   behavior, and not what any of the calling code expects.
+
+### Decision
+
+- **Chat**: implemented replay-on-reconnect as described in option 2. This is
+  a real guarantee, not just a documented tradeoff: a client that was briefly
+  offline gets everything it missed, up to the cap, automatically on
+  reconnect.
+- **Notifications**: fixed the broken realtime channel by routing it through
+  `notificationService.sendToUser` (which holds the actual shared,
+  Redis-adapter-backed `io`) instead of the nonexistent
+  `websocketService.sendToUser`. The reconnect-gap tradeoff for
+  notifications is accepted and now explicit in code: realtime delivery only
+  reaches sockets connected at emit time; **durable catch-up is
+  `GET /api/notifications` (`ActivityFeed`)**, which clients are expected to
+  refetch on reconnect rather than assume the socket alone is authoritative.
+
+### Consequences
+
+**Positive:**
+- Chat messages sent during a brief disconnect are no longer silently lost
+  for the reconnecting client — bounded, observable (`truncated` + a
+  `logger.warn` when truncation happens), and requires no client-side
+  polling for the common case.
+- Realtime notification delivery works at all now, for every caller that
+  requests the `'push'`/`'websocket'` channel — this was previously a 100%
+  failure rate, not a partial gap.
+- No new schema or migration: both fixes reuse fields/tables already in the
+  database (`ChatParticipant.lastSeenAt`, `ChatMessage`, `ActivityFeed`).
+
+**Negative:**
+- The chat replay cap (200 messages/room) means an extremely long outage in
+  a very active room is not fully replayed over the socket — acceptable
+  because the REST pagination fallback exists specifically for that case.
+- Notifications still have no per-item "was this specific realtime event
+  delivered" guarantee — the tradeoff is that `ActivityFeed` is the source of
+  truth for history, and the socket is a best-effort, low-latency layer on
+  top of it, not the only channel.
+
+### Related Decisions
+
+- Builds on the Redis-adapter/`presenceService` work referenced above that
+  made `chatService`'s `io` reachable across instances — replay would be
+  meaningless if messages sent while a client is connected to a *different*
+  instance already didn't arrive.
 
 ---
 

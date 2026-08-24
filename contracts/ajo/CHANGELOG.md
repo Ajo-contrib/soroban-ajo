@@ -28,6 +28,15 @@ All changes in this section remain at **schema v1**. No migration is required
 for on-chain state. Integrators should review behavioral changes below to
 determine if client-side updates are needed.
 
+### Dependency Policy
+
+- `soroban-sdk` is now pinned to an exact version (`=21.7.7`) in `Cargo.toml`
+  instead of a caret range, and a stricter, reviewed-bump-only dependency
+  policy has been documented for this crate. See
+  [`docs/DEPENDENCY_POLICY.md`](docs/DEPENDENCY_POLICY.md). No contract
+  behavior changed; the resolved SDK version is unchanged from what
+  `Cargo.lock` already pinned.
+
 ---
 
 ## [v1] - Security & Audit Hardening (2026-07-16 to 2026-07-24)

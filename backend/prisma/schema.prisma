@@ -607,11 +607,36 @@ model FraudAlert {
   createdAt  DateTime  @default(now())
   reviewedAt DateTime?
   reviewedBy String?
+  modelVersionId String?
+
+  modelVersion FraudModelVersion? @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([status])
   @@index([severity])
   @@index([alertType])
+  @@index([createdAt(sort: Desc)])
+  @@index([modelVersionId])
+}
+
+/// Versioned parameters and validation results for the statistical fraud model.
+model FraudModelVersion {
+  id                    String   @id
+  algorithm             String
+  parameters            String   @db.Text
+  trainingExamples      Int
+  validationExamples    Int
+  validationPrecision   Float
+  validationRecall      Float
+  validationF1          Float
+  status                String   @default("CANDIDATE") // CANDIDATE | ACTIVE | RETIRED
+  createdAt             DateTime @default(now())
+  activatedAt           DateTime?
+  retiredAt             DateTime?
+
+  alerts FraudAlert[]
+
+  @@index([status])
   @@index([createdAt(sort: Desc)])
 }
 
