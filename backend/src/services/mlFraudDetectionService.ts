@@ -37,6 +37,7 @@ export interface FraudAlert {
   details: Record<string, unknown>
   status: AlertStatus
   source: string
+  modelVersionId?: string
   fraudFlagId?: string
   resolution?: string
   createdAt: Date
@@ -50,6 +51,22 @@ export interface AnomalyResult {
   reasons: string[]
   severity: FraudSeverity
 }
+
+export interface FraudModelParameters {
+  anomalyThreshold: number
+}
+
+export interface FraudModelRetrainingResult {
+  modelId: string
+  activated: boolean
+  trainingExamples: number
+  validationExamples: number
+  candidateF1: number
+  activeF1: number
+}
+
+const DEFAULT_MODEL_ID = 'fraud-statistical-v1'
+const DEFAULT_MODEL_PARAMETERS: FraudModelParameters = { anomalyThreshold: 30 }
 
 // ─── Simple statistical helpers (no external ML lib needed) ──────────────────
 
@@ -82,7 +99,10 @@ export class MLFraudDetectionService {
    * - Unusually large amounts vs. user history (z-score > 3)
    * - Multiple groups joined in a short window (>5 in 1 h)
    */
-  async detectPatterns(tx: TransactionPattern): Promise<AnomalyResult> {
+  async detectPatterns(
+    tx: TransactionPattern,
+    modelParameters?: FraudModelParameters
+  ): Promise<AnomalyResult> {
     const reasons: string[] = []
     let score = 0
 
@@ -128,8 +148,9 @@ export class MLFraudDetectionService {
       score += 20
     }
 
+    const model = modelParameters ?? (await this.getActiveModel()).parameters
     const severity = this.scoreToSeverity(score)
-    return { isAnomaly: score >= 30, score, reasons, severity }
+    return { isAnomaly: score >= model.anomalyThreshold, score, reasons, severity }
   }
 
   // ─── Anomaly Detection ───────────────────────────────────────────────────
@@ -194,7 +215,7 @@ export class MLFraudDetectionService {
     severity: FraudSeverity,
     score: number,
     details: Record<string, unknown>,
-    options: { source?: string; fraudFlagId?: string } = {}
+    options: { source?: string; fraudFlagId?: string; modelVersionId?: string } = {}
   ): Promise<FraudAlert> {
     const alert = await this.prisma.fraudAlert.create({
       data: {
@@ -206,6 +227,7 @@ export class MLFraudDetectionService {
         status: 'OPEN',
         source: options.source ?? 'ML',
         ...(options.fraudFlagId ? { fraudFlagId: options.fraudFlagId } : {}),
+        ...(options.modelVersionId ? { modelVersionId: options.modelVersionId } : {}),
       },
     })
 
@@ -284,7 +306,8 @@ export class MLFraudDetectionService {
    * This is the primary entry point for transaction-time checks.
    */
   async analyzeTransaction(tx: TransactionPattern): Promise<AnomalyResult> {
-    const result = await this.detectPatterns(tx)
+    const model = await this.getActiveModel()
+    const result = await this.detectPatterns(tx, model.parameters)
 
     if (result.isAnomaly) {
       await this.createAlert(tx.userId, 'TRANSACTION_ANOMALY', result.severity, result.score, {
@@ -292,10 +315,154 @@ export class MLFraudDetectionService {
         amount: tx.amount.toString(),
         groupId: tx.groupId,
         ipAddress: tx.ipAddress,
-      })
+      }, { modelVersionId: model.id })
     }
 
     return result
+  }
+
+  /**
+   * Train a candidate threshold from reviewed outcomes and promote it only
+   * when it is at least as accurate as the currently active version on the
+   * held-out set. Explicit FALSE_POSITIVE/FALSE_NEGATIVE feedback is required.
+   */
+  async retrainModel(): Promise<FraudModelRetrainingResult | null> {
+    const modelStore = (this.prisma as any).fraudModelVersion
+    if (!modelStore) return null
+
+    const reviewedAlerts = await this.prisma.fraudAlert.findMany({
+      where: { reviewedAt: { not: null }, resolution: { not: null } },
+      select: { score: true, resolution: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    })
+    const labeled = reviewedAlerts
+      .map((alert: any) => ({
+        score: Number(alert.score),
+        label: this.labelFromResolution(alert.resolution),
+      }))
+      .filter((alert: { score: number; label: number | null }) => alert.label !== null) as Array<{
+      score: number
+      label: number
+    }>
+
+    if (labeled.length < 10) return null
+
+    const split = Math.max(1, Math.floor(labeled.length * 0.8))
+    const training = labeled.slice(0, split)
+    const validation = labeled.slice(split)
+    if (!this.hasBothLabels(training) || !this.hasBothLabels(validation)) return null
+    const thresholds = Array.from({ length: 15 }, (_, index) => 20 + index * 5)
+    const candidateThreshold = thresholds.reduce((best, threshold) => {
+      const f1 = this.metricsForThreshold(training, threshold).f1
+      return f1 > best.f1 ? { threshold, f1 } : best
+    }, { threshold: DEFAULT_MODEL_PARAMETERS.anomalyThreshold, f1: -1 }).threshold
+    const candidateMetrics = this.metricsForThreshold(validation, candidateThreshold)
+    const active = await this.getActiveModel()
+    const activeMetrics = this.metricsForThreshold(validation, active.parameters.anomalyThreshold)
+    const modelId = `fraud-statistical-${Date.now()}`
+
+    await modelStore.create({
+      data: {
+        id: modelId,
+        algorithm: 'z-score-threshold',
+        parameters: JSON.stringify({ anomalyThreshold: candidateThreshold }),
+        trainingExamples: training.length,
+        validationExamples: validation.length,
+        validationPrecision: candidateMetrics.precision,
+        validationRecall: candidateMetrics.recall,
+        validationF1: candidateMetrics.f1,
+        status: candidateMetrics.f1 >= activeMetrics.f1 ? 'ACTIVE' : 'CANDIDATE',
+        ...(candidateMetrics.f1 >= activeMetrics.f1 ? { activatedAt: new Date() } : {}),
+      },
+    })
+
+    if (candidateMetrics.f1 >= activeMetrics.f1) {
+      await modelStore.updateMany({
+        where: { status: 'ACTIVE', id: { not: modelId } },
+        data: { status: 'RETIRED', retiredAt: new Date() },
+      })
+    }
+
+    logger.info('Fraud model retraining completed', {
+      modelId,
+      activated: candidateMetrics.f1 >= activeMetrics.f1,
+      candidateF1: candidateMetrics.f1,
+      activeF1: activeMetrics.f1,
+    })
+    return {
+      modelId,
+      activated: candidateMetrics.f1 >= activeMetrics.f1,
+      trainingExamples: training.length,
+      validationExamples: validation.length,
+      candidateF1: candidateMetrics.f1,
+      activeF1: activeMetrics.f1,
+    }
+  }
+
+  /** Roll back to a previously retired model version. */
+  async rollbackModel(modelId: string): Promise<void> {
+    const modelStore = (this.prisma as any).fraudModelVersion
+    if (!modelStore) throw new Error('Fraud model versioning is not available')
+    const model = await modelStore.findUnique({ where: { id: modelId } })
+    if (!model || model.status !== 'RETIRED') throw new Error('Only retired models can be rolled back')
+    await modelStore.updateMany({ where: { status: 'ACTIVE' }, data: { status: 'RETIRED', retiredAt: new Date() } })
+    await modelStore.update({ where: { id: modelId }, data: { status: 'ACTIVE', activatedAt: new Date(), retiredAt: null } })
+  }
+
+  private async getActiveModel(): Promise<{ id: string; parameters: FraudModelParameters }> {
+    const modelStore = (this.prisma as any).fraudModelVersion
+    if (!modelStore) return { id: DEFAULT_MODEL_ID, parameters: DEFAULT_MODEL_PARAMETERS }
+    const active = await modelStore.findFirst({ where: { status: 'ACTIVE' }, orderBy: { activatedAt: 'desc' } })
+    if (!active) {
+      try {
+        await modelStore.create({
+          data: {
+            id: DEFAULT_MODEL_ID,
+            algorithm: 'z-score-threshold',
+            parameters: JSON.stringify(DEFAULT_MODEL_PARAMETERS),
+            trainingExamples: 0,
+            validationExamples: 0,
+            validationPrecision: 0,
+            validationRecall: 0,
+            validationF1: 0,
+            status: 'ACTIVE',
+            activatedAt: new Date(),
+          },
+        })
+      } catch (error: any) {
+        if (error?.code !== 'P2002') throw error
+      }
+      const initialized = await modelStore.findFirst({ where: { status: 'ACTIVE' }, orderBy: { activatedAt: 'desc' } })
+      if (initialized) return { id: initialized.id, parameters: JSON.parse(initialized.parameters) as FraudModelParameters }
+      return { id: DEFAULT_MODEL_ID, parameters: DEFAULT_MODEL_PARAMETERS }
+    }
+    return { id: active.id, parameters: JSON.parse(active.parameters) as FraudModelParameters }
+  }
+
+  private labelFromResolution(resolution: string | null): number | null {
+    if (!resolution) return null
+    if (/FALSE_NEGATIVE|confirmed\s+fraud|true\s+positive/i.test(resolution)) return 1
+    if (/FALSE_POSITIVE|legitimate|legit|dismissed/i.test(resolution)) return 0
+    return null
+  }
+
+  private metricsForThreshold(examples: Array<{ score: number; label: number }>, threshold: number) {
+    let truePositive = 0
+    let falsePositive = 0
+    let falseNegative = 0
+    for (const example of examples) {
+      const predicted = example.score >= threshold ? 1 : 0
+      if (predicted === 1 && example.label === 1) truePositive++
+      if (predicted === 1 && example.label === 0) falsePositive++
+      if (predicted === 0 && example.label === 1) falseNegative++
+    }
+    const precision = truePositive / Math.max(1, truePositive + falsePositive)
+    const recall = truePositive / Math.max(1, truePositive + falseNegative)
+    return { precision, recall, f1: (2 * precision * recall) / Math.max(1, precision + recall) }
+  }
+
+  private hasBothLabels(examples: Array<{ label: number }>): boolean {
+    return examples.some((example) => example.label === 0) && examples.some((example) => example.label === 1)
   }
 
   // ─── Feedback Loop ───────────────────────────────────────────────────────
@@ -349,6 +516,7 @@ export class MLFraudDetectionService {
       details: typeof raw.details === 'string' ? JSON.parse(raw.details) : (raw.details ?? {}),
       status: raw.status as AlertStatus,
       source: raw.source ?? 'ML',
+      modelVersionId: raw.modelVersionId ?? undefined,
       fraudFlagId: raw.fraudFlagId ?? undefined,
       resolution: raw.resolution ?? undefined,
       createdAt: raw.createdAt,

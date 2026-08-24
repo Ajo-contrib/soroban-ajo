@@ -244,6 +244,14 @@ export class FraudOrchestrator {
     logger.info('Alert feedback recorded via orchestrator', { alertId, outcome })
   }
 
+  async retrainModel() {
+    return this.ml.retrainModel()
+  }
+
+  async rollbackModel(modelId: string): Promise<void> {
+    return this.ml.rollbackModel(modelId)
+  }
+
   /**
    * Record admin review of a rule-based FraudFlag.
    */

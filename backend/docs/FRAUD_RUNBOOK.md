@@ -47,6 +47,8 @@ GET  /api/fraud/alerts                — list alerts (filter by status/severity
 GET  /api/fraud/alerts/pending        — queue of OPEN/REVIEWING alerts
 POST /api/fraud/alerts/:id/review     — resolve or dismiss an alert
 POST /api/fraud/alerts/:id/feedback   — record false positive/negative
+POST /api/fraud/models/retrain        — train and validate a candidate model
+POST /api/fraud/models/:id/rollback   — restore a retired model version
 GET  /api/fraud/my-flags              — user's own alerts (user auth)
 ```
 
@@ -155,7 +157,27 @@ If false-negative rate is high → decrease the threshold or add new rule checks
 
 ---
 
-## 6. Redis Keys
+## 6. Model Retraining, Versioning & Rollback
+
+Reviewed alert outcomes are the labeled dataset. Use the feedback endpoint with
+`FALSE_POSITIVE` or `FALSE_NEGATIVE`; confirmed-fraud resolutions are also
+accepted when the resolution contains `confirmed fraud`. At least 10 labeled
+alerts are required before retraining starts.
+
+Retraining runs automatically at 04:00 UTC on the first day of every month,
+or can be started manually by an admin with `POST /api/fraud/models/retrain`.
+The statistical detector is versioned as a `FraudModelVersion` record with its
+threshold, training count, validation count, precision, recall, and F1 score.
+Alerts store the model version that produced them.
+
+The data is split chronologically: the first 80% trains the candidate threshold
+and the final 20% is held out for validation. A candidate is activated only if
+its held-out F1 is at least the active model's F1. A weaker candidate remains
+`CANDIDATE` and cannot affect decisions. To restore a prior version, an admin
+posts to `POST /api/fraud/models/{modelId}/rollback`; only `RETIRED` versions
+can be restored.
+
+## 7. Redis Keys
 
 | Key pattern | Purpose | TTL |
 |---|---|---|
@@ -169,15 +191,15 @@ redis-cli DEL fraud:ip:1.2.3.4   # use with caution — logs the action
 
 ---
 
-## 7. Known Limitations
+## 8. Known Limitations
 
 - `checkIPMatch` and `checkDeviceMatch` in `FraudDetector` are **stubs** (always return `false`). They require a `UserMetadata` table to store historical IPs/fingerprints. Do not rely on these checks until implemented.
-- The ML service uses statistical z-score, not a trained model. Accuracy depends on having sufficient contribution history (≥5 data points). New users are under-detected.
+- The ML service uses a versioned statistical z-score threshold, not a learned feature model. Accuracy depends on having sufficient contribution history (≥5 data points) and reviewed labels. New users are under-detected.
 - The `FraudAlert` model does not yet have a foreign-key relation to `User` — it stores `userId` as a plain string. This is intentional to avoid cascade issues, but means no Prisma relational query is available.
 
 ---
 
-## 8. Ownership
+## 9. Ownership
 
 | Component | On-call owner |
 |---|---|
