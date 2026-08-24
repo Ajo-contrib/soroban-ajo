@@ -34,6 +34,7 @@ import { sorobanConfig } from '../config'
 import { createModuleLogger } from '../utils/logger'
 import { alertingService, AlertSeverity } from '../monitoring/alerting'
 import { eventProcessor } from './eventProcessor'
+import { DistributedLock } from './distributedLock'
 import client from 'prom-client'
 import { register } from './metricsService'
 
@@ -227,6 +228,12 @@ export class BlockchainListener {
   private lastProcessedPagingToken: string | null = null
 
   private lagCheckTimer: ReturnType<typeof setInterval> | null = null
+  private readonly coordinationLock = new DistributedLock('ajo:lock:blockchain-listener', {
+    onLost: () => {
+      logger.error('BlockchainListener lost its distributed lease; stopping')
+      this.stop()
+    },
+  })
 
   constructor() {
     this.contractId = sorobanConfig.contractId
@@ -245,28 +252,38 @@ export class BlockchainListener {
   async start(): Promise<void> {
     this.stopped = false
 
-    // Load the last persisted checkpoint before doing anything else.
-    const checkpoint = await loadCheckpoint()
-    this.lastProcessedLedger = checkpoint.lastLedger
-    this.lastProcessedPagingToken = checkpoint.lastPagingToken
+    if (!(await this.coordinationLock.acquire())) {
+      logger.info('BlockchainListener is already active on another backend instance')
+      return
+    }
 
-    logger.info('BlockchainListener starting', {
-      contractId: this.contractId,
-      resumingFromLedger: this.lastProcessedLedger,
-    })
+    try {
+      // Load the last persisted checkpoint before doing anything else.
+      const checkpoint = await loadCheckpoint()
+      this.lastProcessedLedger = checkpoint.lastLedger
+      this.lastProcessedPagingToken = checkpoint.lastPagingToken
 
-    // Back-fill: recover any events emitted while we were down.
-    await this.backfill()
+      logger.info('BlockchainListener starting', {
+        contractId: this.contractId,
+        resumingFromLedger: this.lastProcessedLedger,
+      })
 
-    // Start the live SSE stream.
-    this.startLiveStream()
+      // Back-fill: recover any events emitted while we were down.
+      await this.backfill()
 
-    // Start the lag monitoring heartbeat.
-    this.lagCheckTimer = setInterval(() => {
-      this.checkLag().catch((err) =>
-        logger.warn('Lag check failed', { err })
-      )
-    }, LAG_CHECK_INTERVAL_MS)
+      // Start the live SSE stream.
+      this.startLiveStream()
+
+      // Start the lag monitoring heartbeat.
+      this.lagCheckTimer = setInterval(() => {
+        this.checkLag().catch((err) =>
+          logger.warn('Lag check failed', { err })
+        )
+      }, LAG_CHECK_INTERVAL_MS)
+    } catch (error) {
+      await this.coordinationLock.release()
+      throw error
+    }
   }
 
   stop(): void {
@@ -277,6 +294,7 @@ export class BlockchainListener {
       clearInterval(this.lagCheckTimer)
       this.lagCheckTimer = null
     }
+    void this.coordinationLock.release()
     logger.info('BlockchainListener stopped')
   }
 
