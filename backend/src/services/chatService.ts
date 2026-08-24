@@ -11,6 +11,18 @@ interface SocketData {
   walletAddress: string
 }
 
+// Delivery guarantee for a client that was only briefly disconnected (flaky
+// mobile network, backgrounded tab, a dropped WebSocket ping, etc.): Socket.IO
+// only delivers `new_message` to sockets that are connected at emit time, so
+// without an explicit replay step, any messages broadcast during the gap are
+// gone for that client for good. On every (re)connect we replay everything a
+// room received since the participant's `lastSeenAt`, capped at this many
+// messages. This is an explicit, bounded tradeoff, not an oversight: a gap
+// wider than the cap is NOT fully replayed over the socket — the client is
+// told via `truncated: true` and is expected to fall back to
+// `GET /api/chat/rooms/:roomId/messages` (cursor-paginated) for full history.
+const MISSED_MESSAGES_REPLAY_LIMIT = 200
+
 class ChatService {
   private io: SocketIOServer | null = null
 
@@ -138,6 +150,15 @@ class ChatService {
         socket.join(participant.roomId)
         await presenceService.joinGroup(userId, participant.roomId)
 
+        // Replay messages missed since this participant's last connection,
+        // before we stamp a fresh lastSeenAt below — see
+        // MISSED_MESSAGES_REPLAY_LIMIT for the guarantee/tradeoff this gives.
+        // A null lastSeenAt means this is the participant's first-ever join,
+        // so there's nothing to replay (getMessages/pagination covers history).
+        if (participant.lastSeenAt) {
+          await this.replayMissedMessages(socket, participant.roomId, participant.lastSeenAt)
+        }
+
         // Update last seen
         await prisma.chatParticipant.update({
           where: {
@@ -153,6 +174,58 @@ class ChatService {
       logger.info(`User ${userId} joined ${participantRooms.length} rooms`)
     } catch (error) {
       logger.error('Error joining user rooms:', error)
+    }
+  }
+
+  /**
+   * Emits any messages a room received after `since` directly to `socket`,
+   * capped at MISSED_MESSAGES_REPLAY_LIMIT. No-op (and no emit) if nothing
+   * was missed. See MISSED_MESSAGES_REPLAY_LIMIT for the guarantee this gives.
+   */
+  private async replayMissedMessages(socket: Socket, roomId: string, since: Date) {
+    try {
+      const missed = await prisma.chatMessage.findMany({
+        where: {
+          roomId,
+          deletedAt: null,
+          createdAt: { gt: since },
+        },
+        include: {
+          user: {
+            select: {
+              walletAddress: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: MISSED_MESSAGES_REPLAY_LIMIT + 1,
+      })
+
+      if (missed.length === 0) return
+
+      const truncated = missed.length > MISSED_MESSAGES_REPLAY_LIMIT
+      const messages = (truncated ? missed.slice(0, MISSED_MESSAGES_REPLAY_LIMIT) : missed).map((message) => ({
+        id: message.id,
+        roomId: message.roomId,
+        userId: message.userId,
+        walletAddress: message.user.walletAddress,
+        content: message.content,
+        type: message.type,
+        metadata: message.metadata ? JSON.parse(message.metadata) : null,
+        isEdited: message.isEdited,
+        createdAt: message.createdAt,
+      }))
+
+      socket.emit('missed_messages', { roomId, messages, truncated })
+
+      if (truncated) {
+        logger.warn('Missed-message replay truncated — client should paginate via REST', {
+          roomId,
+          replayed: messages.length,
+        })
+      }
+    } catch (error) {
+      logger.error('Error replaying missed messages:', error)
     }
   }
 
