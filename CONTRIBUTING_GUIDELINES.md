@@ -121,11 +121,53 @@ shape:
   Import the singleton directly (`import { notificationService } from
   '../services/notificationService'`) wherever it's needed. To substitute a
   mock in tests, use `jest.mock('../services/notificationService')`.
-* **Service that needs per-request or per-call state**: export the class
-  and let the caller instantiate it where needed, e.g. a controller
-  constructing it with request-scoped config.
-* **Stateless logic with no instance data**: export plain functions instead
-  of a class (a "function module"), e.g. `searchService.ts`.
+  Examples: `sorobanService.ts`, `cacheService.ts`, `webhookService.ts`,
+  `blockchainListener.ts`, `gamificationService.ts`.
+
+* **Service that needs per-request or per-call state**: export only the
+  class and let each call site instantiate it with `new`. Use this when the
+  service takes request-scoped constructor arguments (e.g. a `PrismaClient`
+  instance, per-request config) or when each caller intentionally owns its
+  own lifecycle.
+  ```ts
+  export class PaymentGatewayService {
+    constructor(private config: PaymentConfig) { ... }
+  }
+  // in controller:
+  const svc = new PaymentGatewayService(req.paymentConfig)
+  ```
+  Examples: `paymentGatewayService.ts`, `stripeService.ts`,
+  `paypalService.ts`, `userDataExportService.ts`, `healthCheck.ts`,
+  `distributedLock.ts`.
+
+* **Stateless logic with no instance data (function module)**: export plain
+  named functions instead of a class. Use this when the service is a pure
+  collection of utility functions with no shared mutable state.
+  ```ts
+  export async function searchGroups(params: GroupSearchParams) { ... }
+  export async function searchMembers(params: MemberSearchParams) { ... }
+  ```
+  Examples: `searchService.ts`, `calendarService.ts`, `configService.ts`,
+  `e2eKeyService.ts`, `i18nService.ts`, `reminderService.ts`,
+  `verificationService.ts`, `groupHealthService.ts`.
+
+* **Static-only class**: all methods are `static`; the class is used as a
+  namespace, never instantiated. No singleton export is needed — callers
+  invoke `ClassName.method()` directly.
+  ```ts
+  export class AuthService {
+    static generateToken(...) { ... }
+    static verifyToken(...) { ... }
+  }
+  // caller: AuthService.generateToken(publicKey)
+  ```
+  Examples: `authService.ts` (JWT helpers), `alerting.service.ts`
+  (AlertingService), `cacheWarmer.ts` (CacheWarmer).
+
+**Infrastructure / base files** (`BaseService.ts`,
+`ExampleRefactoredService.ts`, `RewardConfigParser.ts`) export abstract
+base classes or shared interfaces only. They are not services themselves and
+should not be imported by routes or controllers directly.
 
 Do not introduce a new DI container, service locator, or registry —
 consolidate on one of the patterns above.
