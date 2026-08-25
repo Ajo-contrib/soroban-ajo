@@ -1113,6 +1113,21 @@ model Payment {
   @@index([status])
 }
 
+/// One row per (gateway, eventId) pair. Every major payment provider
+/// (Stripe, PayPal, ...) guarantees only at-least-once webhook delivery, so
+/// the same event can and will be redelivered. This row is inserted inside
+/// the same DB transaction as the payment side effects it guards — the
+/// unique constraint is what makes a duplicate delivery a no-op instead of
+/// a race between two concurrent "was this already processed?" reads.
+model ProcessedPaymentWebhookEvent {
+  id          String   @id @default(cuid())
+  gateway     String
+  eventId     String
+  processedAt DateTime @default(now())
+
+  @@unique([gateway, eventId])
+}
+
 /// Payment refunds
 model PaymentRefund {
   id               String   @id @default(cuid())

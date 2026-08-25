@@ -2,7 +2,7 @@ import { Request, Response } from 'express'
 import { StripeService } from '../services/stripeService'
 import { PayPalService } from '../services/paypalService'
 import { PaymentGatewayService } from '../services/paymentGatewayService'
-import { PaymentStatus } from '../types/payment'
+import { PaymentGateway, PaymentStatus } from '../types/payment'
 import { createModuleLogger } from '../utils/logger'
 
 const logger = createModuleLogger('PaymentWebhookHandler')
@@ -32,9 +32,12 @@ export const paymentWebhookHandler = {
       switch (event.type) {
         case 'payment_intent.succeeded': {
           const paymentIntent = event.data.object
-          await paymentGatewayService.confirmPayment(paymentIntent.id, {
-            stripeEvent: event,
-          })
+          await paymentGatewayService.confirmPayment(
+            paymentIntent.id,
+            PaymentGateway.STRIPE,
+            event.id,
+            { stripeEvent: event }
+          )
           logger.info('Stripe payment succeeded', {
             paymentIntentId: paymentIntent.id,
           })
@@ -100,9 +103,12 @@ export const paymentWebhookHandler = {
       switch (event.event_type) {
         case 'PAYMENT.CAPTURE.COMPLETED': {
           const orderId = event.resource.id
-          await paymentGatewayService.confirmPayment(orderId, {
-            payPalEvent: event,
-          })
+          await paymentGatewayService.confirmPayment(
+            orderId,
+            PaymentGateway.PAYPAL,
+            event.id,
+            { payPalEvent: event }
+          )
           logger.info('PayPal payment completed', {
             orderId,
           })

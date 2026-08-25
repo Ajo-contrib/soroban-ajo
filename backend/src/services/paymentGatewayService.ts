@@ -108,27 +108,65 @@ export class PaymentGatewayService {
   }
 
   /**
-   * Confirm payment completion (called by webhooks)
+   * Confirm payment completion (called by webhooks).
+   *
+   * `gateway` + `eventId` identify the specific webhook delivery (Stripe's
+   * `event.id`, PayPal's `event.id`, etc.), not the payment itself. Payment
+   * providers document at-least-once delivery as a guarantee, so the same
+   * event can arrive more than once. The dedup record is inserted inside
+   * the same transaction as the payment update: if another delivery of the
+   * same event already committed that insert, the unique constraint makes
+   * this insert fail and we skip the side effects below instead of applying
+   * them twice — a plain "check payment.status first" read would leave a
+   * gap for two concurrent deliveries to both pass the check.
    */
-  async confirmPayment(gatewayPaymentId: string, metadata?: any): Promise<void> {
+  async confirmPayment(
+    gatewayPaymentId: string,
+    gateway: PaymentGateway,
+    eventId: string,
+    metadata?: any
+  ): Promise<void> {
     try {
-      const payment = await prisma.payment.findFirst({
-        where: { gatewayPaymentId },
+      const payment = await prisma.$transaction(async (tx) => {
+        const payment = await tx.payment.findFirst({
+          where: { gatewayPaymentId },
+        })
+
+        if (!payment) {
+          throw new Error('Payment not found')
+        }
+
+        try {
+          await tx.processedPaymentWebhookEvent.create({
+            data: { gateway, eventId },
+          })
+        } catch (err: any) {
+          if (err.code === 'P2002') {
+            return null
+          }
+          throw err
+        }
+
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: PaymentStatus.COMPLETED,
+            completedAt: new Date(),
+            metadata: metadata || payment.metadata,
+          },
+        })
+
+        return payment
       })
 
       if (!payment) {
-        throw new Error('Payment not found')
+        logger.info('Duplicate payment webhook event skipped', {
+          gatewayPaymentId,
+          gateway,
+          eventId,
+        })
+        return
       }
-
-      // Update payment status
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: PaymentStatus.COMPLETED,
-          completedAt: new Date(),
-          metadata: metadata || payment.metadata,
-        },
-      })
 
       // Notify user
       await notificationService.sendToUser(payment.userId, {
@@ -141,11 +179,13 @@ export class PaymentGatewayService {
       logger.info('Payment confirmed', {
         paymentId: payment.id,
         gatewayPaymentId,
+        eventId,
       })
     } catch (error: any) {
       logger.error('Failed to confirm payment', {
         error: error.message,
         gatewayPaymentId,
+        eventId,
       })
       throw error
     }
