@@ -67,6 +67,7 @@ All three prior **critical** findings are resolved:
     zero errors before this pass; only pre-existing unrelated warnings /
     one pre-existing `prefer-const` lint error remain, at lines the diff
     never touches).
+- **`@apollo/server` (backend)** — upgraded from `^4.11.0` (4.13.0) to `^5.5.1` with `@as-integrations/express4@^1.1.2`, resolving the vendor-documented EOL deprecation (which took effect January 26, 2026) and associated transitive CVEs. The Express middleware integration was updated from `@apollo/server/express4` to `@as-integrations/express4` in `backend/src/graphql/server.ts`, with all GraphQL unit and integration tests (query complexity, DataLoader batching, auth parity) verified and passing.
 - **`shell-quote`**, **`vitest`** (dev-only) — resolved as part of the
   `npm audit fix` pass; no source changes needed.
 
@@ -76,15 +77,7 @@ Everything below needs a semver-major bump of the flagged package (or a
 parent that pulls it in), which risks behavioral/API breaks `npm audit fix`
 won't attempt automatically and this pass didn't verify against the
 runtime — each needs its own scoped PR with real testing, the same way the
-`jspdf` bump above was verified rather than blind-bumped.
-
-**`@apollo/server` 4.13.0 → 5.5.1** — flagged explicitly because v4 is past
-its documented end-of-life (2026-01-26; `npm install` already surfaces this
-as a deprecation warning). The two advisories it fixes are moderate
-(a `uuid` transitive dependency), but the EOL status is the bigger reason to
-prioritize this one: no more security patches land on v4 regardless of
-whether a new CVE appears. Needs its own PR — Apollo Server v4→v5 changes
-plugin/middleware registration APIs, so this isn't a drop-in bump.
+`jspdf` and `@apollo/server` bumps above were verified rather than blind-bumped.
 
 **OpenTelemetry / `@sentry/profiling-node` chain** (`@opentelemetry/sdk-node`
 → 0.221.0 fixes 16 advisories; `@opentelemetry/auto-instrumentations-node` →
