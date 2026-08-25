@@ -26,6 +26,8 @@ export interface TransactionPattern {
   groupId: string
   timestamp: Date
   ipAddress?: string
+  contractAddress?: string
+  tenantId?: string
 }
 
 export interface FraudAlert {
@@ -39,6 +41,8 @@ export interface FraudAlert {
   source: string
   modelVersionId?: string
   fraudFlagId?: string
+  contractAddress?: string
+  tenantId?: string
   resolution?: string
   createdAt: Date
   reviewedAt?: Date
@@ -215,15 +219,27 @@ export class MLFraudDetectionService {
     severity: FraudSeverity,
     score: number,
     details: Record<string, unknown>,
-    options: { source?: string; fraudFlagId?: string; modelVersionId?: string } = {}
+    options: {
+      source?: string
+      fraudFlagId?: string
+      modelVersionId?: string
+      contractAddress?: string
+      tenantId?: string
+    } = {}
   ): Promise<FraudAlert> {
+    const fullDetails = {
+      ...details,
+      ...(options.contractAddress ? { contractAddress: options.contractAddress } : {}),
+      ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+    }
+
     const alert = await this.prisma.fraudAlert.create({
       data: {
         userId,
         alertType,
         severity,
         score,
-        details: JSON.stringify(details),
+        details: JSON.stringify(fullDetails),
         status: 'OPEN',
         source: options.source ?? 'ML',
         ...(options.fraudFlagId ? { fraudFlagId: options.fraudFlagId } : {}),
@@ -231,7 +247,15 @@ export class MLFraudDetectionService {
       },
     })
 
-    logger.warn('Fraud alert created', { alertId: alert.id, userId, alertType, severity, score })
+    logger.warn('Fraud alert created', {
+      alertId: alert.id,
+      userId,
+      alertType,
+      severity,
+      score,
+      contractAddress: options.contractAddress,
+      tenantId: options.tenantId,
+    })
 
     // Auto-escalate critical alerts for immediate human review
     if (severity === 'CRITICAL') {
@@ -253,6 +277,8 @@ export class MLFraudDetectionService {
     status?: AlertStatus
     severity?: FraudSeverity
     userId?: string
+    contractAddress?: string
+    tenantId?: string
     page?: number
     limit?: number
   }): Promise<{ alerts: FraudAlert[]; total: number }> {
@@ -272,24 +298,36 @@ export class MLFraudDetectionService {
       this.prisma.fraudAlert.count({ where }),
     ])
 
-    return { alerts: (raw ?? []).map(this.mapAlert), total: total ?? 0 }
+    let alerts = (raw ?? []).map(this.mapAlert)
+    if (params.contractAddress) {
+      alerts = alerts.filter((a) => a.contractAddress === params.contractAddress)
+    }
+    if (params.tenantId) {
+      alerts = alerts.filter((a) => a.tenantId === params.tenantId)
+    }
+
+    return { alerts, total: total ?? 0 }
   }
 
   // ─── Manual Review ───────────────────────────────────────────────────────
 
   async reviewAlert(
     alertId: string,
+    resolution: string,
     reviewerId: string,
-    status: 'RESOLVED' | 'DISMISSED',
-    resolution: string
+    status: 'RESOLVED' | 'DISMISSED' = 'RESOLVED'
   ): Promise<FraudAlert> {
-    const alert = await this.prisma.fraudAlert.update({
+    const updated = await this.prisma.fraudAlert.update({
       where: { id: alertId },
-      data: { status, reviewedAt: new Date(), reviewedBy: reviewerId, resolution },
+      data: {
+        status,
+        resolution,
+        reviewedAt: new Date(),
+        reviewedBy: reviewerId,
+      },
     })
-
-    logger.info('Fraud alert reviewed', { alertId, reviewerId, status })
-    return this.mapAlert(alert)
+    logger.info('Fraud alert reviewed', { alertId, status, reviewerId, resolution })
+    return this.mapAlert(updated)
   }
 
   async getPendingReviews(limit = 50): Promise<FraudAlert[]> {
@@ -306,16 +344,30 @@ export class MLFraudDetectionService {
    * This is the primary entry point for transaction-time checks.
    */
   async analyzeTransaction(tx: TransactionPattern): Promise<AnomalyResult> {
-    const model = await this.getActiveModel()
+    const model = await this.getActiveModel({
+      contractAddress: tx.contractAddress,
+      tenantId: tx.tenantId,
+    })
     const result = await this.detectPatterns(tx, model.parameters)
 
     if (result.isAnomaly) {
-      await this.createAlert(tx.userId, 'TRANSACTION_ANOMALY', result.severity, result.score, {
-        reasons: result.reasons,
-        amount: tx.amount.toString(),
-        groupId: tx.groupId,
-        ipAddress: tx.ipAddress,
-      }, { modelVersionId: model.id })
+      await this.createAlert(
+        tx.userId,
+        'TRANSACTION_ANOMALY',
+        result.severity,
+        result.score,
+        {
+          reasons: result.reasons,
+          amount: tx.amount.toString(),
+          groupId: tx.groupId,
+          ipAddress: tx.ipAddress,
+        },
+        {
+          modelVersionId: model.id,
+          contractAddress: tx.contractAddress,
+          tenantId: tx.tenantId,
+        }
+      )
     }
 
     return result
@@ -325,17 +377,39 @@ export class MLFraudDetectionService {
    * Train a candidate threshold from reviewed outcomes and promote it only
    * when it is at least as accurate as the currently active version on the
    * held-out set. Explicit FALSE_POSITIVE/FALSE_NEGATIVE feedback is required.
+   * Supports tenant and contractAddress scoped training to prevent cross-tenant data pollution.
    */
-  async retrainModel(): Promise<FraudModelRetrainingResult | null> {
+  async retrainModel(options?: {
+    contractAddress?: string
+    tenantId?: string
+  }): Promise<FraudModelRetrainingResult | null> {
     const modelStore = (this.prisma as any).fraudModelVersion
     if (!modelStore) return null
 
     const reviewedAlerts = await this.prisma.fraudAlert.findMany({
       where: { reviewedAt: { not: null }, resolution: { not: null } },
-      select: { score: true, resolution: true, createdAt: true },
+      select: { score: true, resolution: true, details: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     })
-    const labeled = reviewedAlerts
+
+    const filteredAlerts = reviewedAlerts.filter((alert: any) => {
+      if (!options?.contractAddress && !options?.tenantId) return true
+      let parsedDetails: Record<string, unknown> = {}
+      try {
+        parsedDetails = typeof alert.details === 'string' ? JSON.parse(alert.details) : (alert.details ?? {})
+      } catch {
+        parsedDetails = {}
+      }
+      if (options?.contractAddress && parsedDetails.contractAddress !== options.contractAddress) {
+        return false
+      }
+      if (options?.tenantId && parsedDetails.tenantId !== options.tenantId) {
+        return false
+      }
+      return true
+    })
+
+    const labeled = filteredAlerts
       .map((alert: any) => ({
         score: Number(alert.score),
         label: this.labelFromResolution(alert.resolution),
@@ -357,9 +431,10 @@ export class MLFraudDetectionService {
       return f1 > best.f1 ? { threshold, f1 } : best
     }, { threshold: DEFAULT_MODEL_PARAMETERS.anomalyThreshold, f1: -1 }).threshold
     const candidateMetrics = this.metricsForThreshold(validation, candidateThreshold)
-    const active = await this.getActiveModel()
+    const active = await this.getActiveModel(options)
     const activeMetrics = this.metricsForThreshold(validation, active.parameters.anomalyThreshold)
-    const modelId = `fraud-statistical-${Date.now()}`
+    const scopeTag = options?.tenantId || options?.contractAddress ? `-${options.tenantId || options.contractAddress}` : ''
+    const modelId = `fraud-statistical${scopeTag}-${Date.now()}`
 
     await modelStore.create({
       data: {
@@ -388,6 +463,7 @@ export class MLFraudDetectionService {
       activated: candidateMetrics.f1 >= activeMetrics.f1,
       candidateF1: candidateMetrics.f1,
       activeF1: activeMetrics.f1,
+      scope: options?.tenantId || options?.contractAddress,
     })
     return {
       modelId,
@@ -409,7 +485,10 @@ export class MLFraudDetectionService {
     await modelStore.update({ where: { id: modelId }, data: { status: 'ACTIVE', activatedAt: new Date(), retiredAt: null } })
   }
 
-  private async getActiveModel(): Promise<{ id: string; parameters: FraudModelParameters }> {
+  private async getActiveModel(options?: {
+    contractAddress?: string
+    tenantId?: string
+  }): Promise<{ id: string; parameters: FraudModelParameters }> {
     const modelStore = (this.prisma as any).fraudModelVersion
     if (!modelStore) return { id: DEFAULT_MODEL_ID, parameters: DEFAULT_MODEL_PARAMETERS }
     const active = await modelStore.findFirst({ where: { status: 'ACTIVE' }, orderBy: { activatedAt: 'desc' } })
@@ -507,17 +586,20 @@ export class MLFraudDetectionService {
   }
 
   private mapAlert(raw: any): FraudAlert {
+    const details = typeof raw.details === 'string' ? JSON.parse(raw.details) : (raw.details ?? {})
     return {
       id: raw.id,
       userId: raw.userId,
       alertType: raw.alertType,
       severity: raw.severity as FraudSeverity,
       score: raw.score,
-      details: typeof raw.details === 'string' ? JSON.parse(raw.details) : (raw.details ?? {}),
+      details,
       status: raw.status as AlertStatus,
       source: raw.source ?? 'ML',
       modelVersionId: raw.modelVersionId ?? undefined,
       fraudFlagId: raw.fraudFlagId ?? undefined,
+      contractAddress: details.contractAddress ?? undefined,
+      tenantId: details.tenantId ?? undefined,
       resolution: raw.resolution ?? undefined,
       createdAt: raw.createdAt,
       reviewedAt: raw.reviewedAt ?? undefined,

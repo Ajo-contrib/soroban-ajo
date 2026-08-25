@@ -17,6 +17,7 @@ This document contains all significant architectural decisions made for the Soro
 11. [ADR-011: Event Sourcing Scope and Its Relationship to Prisma and the Blockchain](#adr-011-event-sourcing-scope-and-its-relationship-to-prisma-and-the-blockchain)
 12. [ADR-012: Service Instantiation Pattern — Retire the DI Container](#adr-012-service-instantiation-pattern--retire-the-di-container)
 13. [ADR-013: Chat/Notification Delivery Guarantees Across a Brief WebSocket Disconnect](#adr-013-chatnotification-delivery-guarantees-across-a-brief-websocket-disconnect)
+14. [ADR-014: Multi-Tenancy and Multi-Deployment Isolation Architecture](#adr-014-multi-tenancy-and-multi-deployment-isolation-architecture)
 
 ---
 
@@ -1001,6 +1002,57 @@ turned up two separate problems, not one:
   made `chatService`'s `io` reachable across instances — replay would be
   meaningless if messages sent while a client is connected to a *different*
   instance already didn't arrive.
+
+---
+
+## ADR-014: Multi-Tenancy and Multi-Deployment Isolation Architecture
+
+**Status**: Accepted  
+**Date**: August 2026  
+**Deciders**: Architecture Team  
+**Affected Components**: Backend (`EventStore`, Caching, ML Fraud Detection, Prisma), Smart Contracts
+
+### Context
+
+Soroban Ajo was initially developed under the implicit assumption of a single Soroban contract deployment and a dedicated backend instance. However, expansion requirements necessitate supporting:
+1. **Multiple Contract Deployments**: Parallel contract instances (e.g. testing staging networks, testnet, future mainnet, or specialized institutional/micro-savings circles).
+2. **White-Labeled / Multi-Tenant Deployments**: Partner organizations or discrete regional communities sharing backend infrastructure while requiring strict isolation of data, cache spaces, event sourcing streams, and fraud detection models.
+
+Without explicit architectural partitioning, shared infrastructure suffers from:
+- **Event Sourcing Collisions & Cross-Tenant Leakage**: Aggregate IDs (like sequential group IDs or round counters) colliding across contracts in `eventStore.ts`, or event replays reconstructing state using foreign contract events.
+- **Cache Key Collisions**: Shared Redis instances overwriting group details, user stats, and leaderboards across tenants.
+- **Fraud Model Contamination**: Statistical thresholds tuned for high-volume, low-value savings groups polluting fraud scoring for high-value enterprise groups, or adversarial attacks against one tenant degrading fraud protection platform-wide.
+
+### Options Considered
+
+1. **Full Database & Infrastructure Separation per Tenant**: Deploy distinct databases, Redis instances, and backend pods per contract/tenant.
+   - *Pros*: Complete physical isolation.
+   - *Cons*: High infrastructure cost and management overhead for micro-deployments or staging networks; inflexible for hybrid/shared setups.
+2. **Implicit Single-Deployment Model with Hardcoded Config**: Continue assuming single `SOROBAN_CONTRACT_ID` per backend instance.
+   - *Pros*: Zero immediate code changes.
+   - *Cons*: High technical debt; massive breaking retrofitting cost when multi-tenancy is required later.
+3. **Hybrid Logical Tenant & Contract Scoping in Shared Services (Selected)**:
+   - Introduce explicit metadata scoping (`contractAddress`, `tenantId`, `network`) in `DomainEvent` and `EventStore`.
+   - Provide scoped cache key generators (`cacheKeys.scoped(tenantId)`) with `tenant:${tenantId}:*` namespace isolation.
+   - Enable tenant-partitioned training and alert filtering in `MLFraudDetectionService` while supporting global fallback.
+   - Retain full backward compatibility with single-tenant deployments.
+
+### Decision
+
+We adopted **Option 3 (Hybrid Logical Tenant & Contract Scoping)**:
+- **Event Store**: `DomainEvent` metadata is extended with optional `contractAddress`, `tenantId`, and `network`. `EventStore` query methods (`getByAggregateId`, `getByType`, `getAll`, `getLatestVersion`) accept scoping options and filter event streams accordingly.
+- **Redis Caching**: `cacheKeys.scoped(tenantIdOrContractAddress)` and `getCacheKeyPatterns.scoped(...)` generate isolated `tenant:<scope>:...` keys and patterns, preventing cross-tenant cache collisions and enabling safe scoped invalidations.
+- **Fraud Detection & ML Training**: `MLFraudDetectionService` associates alerts with `contractAddress` and `tenantId`, and partitions retraining datasets per contract/tenant so candidate models are evaluated and tuned on homogenous, tenant-specific behavior.
+
+### Consequences
+
+**Positive:**
+- Zero risk of cross-tenant or cross-contract data leaks across event sourcing, caching, and fraud modeling.
+- Clear migration path from single-contract deployments to multi-contract / multi-tenant SaaS.
+- Full backward compatibility: unscoped calls default to standard single-deployment behavior without disruption.
+
+**Negative:**
+- Multi-tenant callers must pass context options (`contractAddress` / `tenantId`) when querying multi-tenant event streams or invalidating cache partitions.
 
 ---
 

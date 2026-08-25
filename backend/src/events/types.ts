@@ -20,6 +20,9 @@ export interface DomainEvent<T = Record<string, unknown>> {
     timestamp: string
     version: number
     correlationId?: string
+    contractAddress?: string
+    tenantId?: string
+    network?: string
   }
 }
 

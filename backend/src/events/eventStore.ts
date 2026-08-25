@@ -5,6 +5,12 @@ import { DomainEvent, StoredEvent, EventType } from './types'
 import { logger } from '../utils/logger'
 import { ConflictError } from '../errors/AppError'
 
+export interface EventQueryOptions {
+  contractAddress?: string
+  tenantId?: string
+  network?: string
+}
+
 export class EventStore {
   /**
    * Appends an event for an aggregate.
@@ -36,7 +42,13 @@ export class EventStore {
         },
       })
 
-      logger.info('Event appended', { id, type: event.type, aggregateId: event.aggregateId })
+      logger.info('Event appended', {
+        id,
+        type: event.type,
+        aggregateId: event.aggregateId,
+        contractAddress: event.metadata.contractAddress,
+        tenantId: event.metadata.tenantId,
+      })
 
       return {
         ...event,
@@ -56,42 +68,79 @@ export class EventStore {
   }
 
   /** Returns the version of the most recent event for an aggregate, or 0 if none exists. */
-  async getLatestVersion(aggregateId: string): Promise<number> {
-    const latest = await prisma.eventStore.findFirst({
-      where: { aggregateId },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    })
-    return latest?.version ?? 0
+  async getLatestVersion(aggregateId: string, options?: EventQueryOptions): Promise<number> {
+    if (!options?.contractAddress && !options?.tenantId && !options?.network) {
+      const latest = await prisma.eventStore.findFirst({
+        where: { aggregateId },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      })
+      return latest?.version ?? 0
+    }
+
+    const events = await this.getByAggregateId(aggregateId, 0, options)
+    if (!events.length) return 0
+    return Math.max(...events.map((e) => e.metadata.version))
   }
 
-  async getByAggregateId(aggregateId: string, fromVersion = 0): Promise<StoredEvent[]> {
+  async getByAggregateId(
+    aggregateId: string,
+    fromVersion = 0,
+    options?: EventQueryOptions
+  ): Promise<StoredEvent[]> {
     const events = await prisma.eventStore.findMany({
       where: { aggregateId, version: { gte: fromVersion } },
       orderBy: { sequenceNumber: 'asc' },
     })
 
-    return events.map(this.toStoredEvent)
+    const stored = events.map(this.toStoredEvent)
+    return this.filterByTenant(stored, options)
   }
 
-  async getByType(type: EventType, limit = 100): Promise<StoredEvent[]> {
+  async getByType(
+    type: EventType,
+    limit = 100,
+    options?: EventQueryOptions
+  ): Promise<StoredEvent[]> {
     const events = await prisma.eventStore.findMany({
       where: { type },
       orderBy: { sequenceNumber: 'asc' },
       take: limit,
     })
 
-    return events.map(this.toStoredEvent)
+    const stored = events.map(this.toStoredEvent)
+    return this.filterByTenant(stored, options)
   }
 
-  async getAll(fromSequence = 0, limit = 100): Promise<StoredEvent[]> {
+  async getAll(
+    fromSequence = 0,
+    limit = 100,
+    options?: EventQueryOptions
+  ): Promise<StoredEvent[]> {
     const events = await prisma.eventStore.findMany({
       where: { sequenceNumber: { gt: fromSequence } },
       orderBy: { sequenceNumber: 'asc' },
       take: limit,
     })
 
-    return events.map(this.toStoredEvent)
+    const stored = events.map(this.toStoredEvent)
+    return this.filterByTenant(stored, options)
+  }
+
+  private filterByTenant(events: StoredEvent[], options?: EventQueryOptions): StoredEvent[] {
+    if (!options) return events
+    return events.filter((e) => {
+      if (options.contractAddress && e.metadata.contractAddress !== options.contractAddress) {
+        return false
+      }
+      if (options.tenantId && e.metadata.tenantId !== options.tenantId) {
+        return false
+      }
+      if (options.network && e.metadata.network !== options.network) {
+        return false
+      }
+      return true
+    })
   }
 
   private toStoredEvent(raw: {
@@ -105,7 +154,15 @@ export class EventStore {
     sequenceNumber: number
     createdAt: Date
   }): StoredEvent {
-    const meta = raw.metadata as { userId?: string; timestamp: string; version: number; correlationId?: string }
+    const meta = raw.metadata as {
+      userId?: string
+      timestamp: string
+      version: number
+      correlationId?: string
+      contractAddress?: string
+      tenantId?: string
+      network?: string
+    }
     return {
       id: raw.id,
       type: raw.type as EventType,
