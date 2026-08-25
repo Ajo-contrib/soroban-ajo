@@ -1,4 +1,4 @@
-import { Projection, StoredEvent } from '../types'
+import { Projection, StoredEvent, assertUnhandledEventType } from '../types'
 
 export interface GroupState {
   id: string
@@ -42,8 +42,19 @@ export const groupProjection: Projection<GroupState | null> = {
           totalContributions: base.totalContributions + ((event.payload as { amount: number }).amount ?? 0),
           version: event.metadata.version,
         }
-      default:
+      // These event types don't currently affect GroupState. They're listed
+      // explicitly (rather than falling through a `default`) so that adding
+      // a new EventType without updating this switch is a compile error via
+      // assertUnhandledEventType, instead of a silently under-applied
+      // projection.
+      case 'GROUP_UPDATED':
+      case 'PAYOUT_PROCESSED':
+      case 'DISPUTE_FILED':
+      case 'DISPUTE_RESOLVED':
+      case 'USER_REGISTERED':
         return base
+      default:
+        return assertUnhandledEventType(event.type)
     }
   },
 }
