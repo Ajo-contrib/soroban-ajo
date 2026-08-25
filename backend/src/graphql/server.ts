@@ -1,5 +1,5 @@
 import { ApolloServer, ApolloServerPlugin } from '@apollo/server'
-import { expressMiddleware } from '@apollo/server/express4'
+import { expressMiddleware } from '@as-integrations/express4'
 import { makeExecutableSchema } from '@graphql-tools/schema'
 import { GraphQLError } from 'graphql'
 import { Express } from 'express'
