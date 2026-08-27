@@ -166,6 +166,7 @@ Before submitting your PR, ensure:
 - [ ] PR description explains what and why
 - [ ] Linked to related issue (if applicable)
 - [ ] **Contract changelog** (`contracts/ajo/CHANGELOG.md`): an entry added when the change affects `contracts/ajo/types.rs` or `contracts/ajo/errors.rs`, **or** the contributor has determined no changelog entry is needed
+- [ ] **Fraud runbook** (`backend/docs/FRAUD_RUNBOOK.md`): updated when the change affects `backend/src/services/FraudDetector.ts`, `FraudOrchestrator.ts`, `mlFraudDetectionService.ts`, or the fraud-related parts of `referralService.ts` / `RewardEngine.ts`, **or** the contributor has determined the runbook still matches
 
 ## 📝 PR Description Template
 
