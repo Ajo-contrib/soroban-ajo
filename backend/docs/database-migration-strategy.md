@@ -20,6 +20,16 @@ This project uses **Prisma Migrations** for schema management. Prisma generates 
 
 **Important:** `db:migrate:reset` should NEVER be run against production databases.
 
+### Seeding
+
+- `npm run db:seed` runs `backend/prisma/seed.ts` to bootstrap repeatable local/dev/test data.
+- The development entrypoint clears relevant tables before seeding.
+- Add new seed data files under `backend/prisma/seeds/` and import them from `seed.ts`.
+- For a dedicated test database: point `DATABASE_URL` at it, run `npm run db:migrate`, then
+  `npm run db:seed`, and verify the expected rows land in `users`/`groups`/`goals`.
+- Keep seed data anonymized and free of anything resembling production-sensitive values, and
+  wrap multi-step seed operations in a transaction.
+
 ---
 
 ## Migration Architecture

@@ -109,7 +109,13 @@ export function performanceMonitoringMiddleware(slowThresholdMs: number = 1000) 
  * Logs request body for debugging (with sensitive data masking)
  */
 export function requestBodyLoggingMiddleware(req: Request, res: Response, next: NextFunction) {
-  if (req.method !== 'GET' && req.method !== 'HEAD' && Object.keys(req.body).length > 0) {
+  if (
+    req.method !== 'GET' &&
+    req.method !== 'HEAD' &&
+    req.body &&
+    typeof req.body === 'object' &&
+    Object.keys(req.body).length > 0
+  ) {
     logger.debug(`Request body for ${req.method} ${req.path}`, {
       ...buildRequestContext(req),
       body: sanitizeLogData(req.body),

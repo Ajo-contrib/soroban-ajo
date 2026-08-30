@@ -73,9 +73,13 @@ app.use(requestThrottle)
 app.use(requestLogger)
 app.use(enhancedLoggingMiddleware)
 app.use(performanceMonitoringMiddleware(1000)) // Log requests slower than 1 second
-app.use(requestBodyLoggingMiddleware)
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+// Must run after the body parsers above — it reads req.body, which doesn't
+// exist yet earlier in the chain (every POST/PUT/PATCH/DELETE request with a
+// body previously crashed here with "Cannot convert undefined or null to
+// object" before express.json() had a chance to populate req.body).
+app.use(requestBodyLoggingMiddleware)
 
 // Global API rate limit
 app.use('/api', apiLimiter)

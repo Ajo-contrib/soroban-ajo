@@ -48,7 +48,7 @@ backend/src/
 └── index.ts                 # Express app with Swagger mounted
 
 backend/docs/
-├── API.md                   # Comprehensive API guide
+├── API_REFERENCE.md          # Comprehensive API guide
 └── OPENAPI_SETUP.md         # This file
 ```
 
@@ -110,7 +110,7 @@ Features:
 - **Info Endpoint**: `/api-docs/info`
 
 ### Markdown Documentation
-- **API Guide**: `backend/docs/API.md`
+- **API Guide**: `backend/docs/API_REFERENCE.md`
 
 ## Adding New Endpoints
 
@@ -434,7 +434,7 @@ examples: {
 1. Update schemas when data models change
 2. Update paths when endpoints change
 3. Add new endpoints to appropriate path file
-4. Update API.md with new endpoints
+4. Update API_REFERENCE.md with new endpoints
 5. Test in Swagger UI after changes
 
 ### Version Management

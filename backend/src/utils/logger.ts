@@ -66,6 +66,15 @@ const rejectionFileTransport = new DailyRotateFile({
   format: logFormat,
 })
 
+// winston attaches a 'finish'/'error' listener to each file transport on
+// every logger.child() call (see createModuleLogger below), and this app
+// creates one child logger per module (15+ at startup) sharing these same
+// transport instances — comfortably past EventEmitter's default cap of 10,
+// which otherwise logs a spurious MaxListenersExceededWarning on every boot.
+for (const t of [appFileTransport, errorFileTransport, exceptionFileTransport, rejectionFileTransport]) {
+  t.setMaxListeners(50)
+}
+
 const transports: winston.transport[] = [appFileTransport, errorFileTransport]
 
 if (loggerConfig.consoleEnabled) {
