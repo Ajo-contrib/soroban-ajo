@@ -11,6 +11,7 @@
     "lint:naming": "eslint --config .eslintrc.naming.js 'src/**/*.{ts,tsx}'",
     "lint:a11y": "eslint --config .eslintrc.a11y.json 'src/**/*.{ts,tsx}'",
     "type-check": "tsc --noEmit",
+    "type-check:ci": "tsc -p tsconfig.ci.json",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:a11y": "node scripts/test-accessibility.js",

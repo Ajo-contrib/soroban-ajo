@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "exclude": [
+    "node_modules",
+    "src/stories/**/*",
+    "src/**/*.stories.ts",
+    "src/**/*.stories.tsx",
+    "src/tests/**/*",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+
+    // --- Pre-existing type errors: tracked in GitHub issue #958 ---
+    // Each file below must be removed from this list as its errors are fixed.
+    // Adding new files here without a corresponding issue comment is not allowed.
+    "src/services/soroban.ts",
+    "src/components/InsuranceDashboard.tsx",
+    "src/hooks/usePenaltyStats.ts"
+  ]
+}
