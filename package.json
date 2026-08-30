@@ -19,6 +19,7 @@
     "lint:backend": "cd backend && npm run lint",
     "type-check": "npm run type-check:frontend && npm run type-check:backend",
     "type-check:frontend": "cd frontend && npm run type-check",
+    "type-check:frontend:ci": "cd frontend && npm run type-check:ci",
     "type-check:backend": "cd backend && npm run type-check",
     "test:contracts": "cd contracts/ajo && cargo test",
     "prepare": "npx husky install",

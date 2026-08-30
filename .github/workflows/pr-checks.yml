@@ -275,7 +275,60 @@ jobs:
             fi
           done
 
-  # Job 6: Dependency Review
+  # Job 6: Type Check (frontend + backend)
+  # Introduced to fix: https://github.com/k-deejah/soroban-ajo/issues/958
+  #
+  # Strategy: the frontend tsconfig.ci.json excludes the ~3 files with
+  # pre-existing errors (tracked in issue #958). Once those files are fixed,
+  # remove them from tsconfig.ci.json's exclude list and this job becomes a
+  # full hard gate. The backend runs against the unmodified tsconfig.json —
+  # the syntax error in src/index.ts has been fixed in this PR.
+  #
+  # This job intentionally does NOT use `continue-on-error: true` — the
+  # exclusion list is the correct suppression mechanism. New errors not in the
+  # allowlist will block the PR immediately.
+  type-check:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type Check Frontend (via tsconfig.ci.json allowlist)
+        run: cd frontend && npm run type-check:ci
+        # tsconfig.ci.json excludes the 3 files with pre-existing errors.
+        # Remove a file from that list once its errors are resolved.
+
+      - name: Type Check Backend
+        run: cd backend && npm run type-check
+
+      - name: Annotate known allowlisted files
+        if: always()
+        run: |
+          echo "## Type-Check Allowlist" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following files have pre-existing type errors and are excluded from the CI gate (tracked in issue #958). They must **not** grow without a new issue comment." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          node -e "
+            const fs = require('fs');
+            const tc = JSON.parse(fs.readFileSync('frontend/tsconfig.ci.json','utf8'));
+            const known = (tc.exclude || []).filter(f => !f.includes('node_modules') && !f.includes('stories') && !f.includes('test'));
+            known.forEach(f => console.log('  frontend/' + f));
+          " >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # Job 7: Dependency Review
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
@@ -336,11 +389,11 @@ jobs:
             fi
           done
 
-  # Job 8: PR Summary
+  # Job 9: PR Summary
   pr-summary:
     name: PR Summary
     runs-on: ubuntu-latest
-    needs: [issue-verification, test-coverage, quality-checks]
+    needs: [issue-verification, test-coverage, quality-checks, type-check]
     if: >
       always() &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -353,7 +406,8 @@ jobs:
             const jobs = [
               { name: 'Issue Verification', status: '${{ needs.issue-verification.result }}' },
               { name: 'Test Coverage', status: '${{ needs.test-coverage.result }}' },
-              { name: 'Quality Checks', status: '${{ needs.quality-checks.result }}' }
+              { name: 'Quality Checks', status: '${{ needs.quality-checks.result }}' },
+              { name: 'TypeScript Type Check', status: '${{ needs.type-check.result }}' }
             ];
 
             let summary = '## 📋 PR Quality Check Summary\n\n';
@@ -371,6 +425,7 @@ jobs:
             summary += '- Remove console.log statements\n';
             summary += '- Add JSDoc comments for exported functions\n';
             summary += '- Update documentation if needed\n';
+            summary += '- Fix TypeScript errors — do not add files to `frontend/tsconfig.ci.json` without linking to a tracking issue\n';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,

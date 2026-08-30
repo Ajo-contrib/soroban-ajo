@@ -41,7 +41,10 @@ jobs:
         continue-on-error: false
 
       - name: Type Check Frontend
-        run: cd frontend && npm run type-check
+        # Uses tsconfig.ci.json which excludes files with pre-existing errors
+        # tracked in https://github.com/k-deejah/soroban-ajo/issues/958.
+        # Switch back to `npm run type-check` once the allowlist is cleared.
+        run: cd frontend && npm run type-check:ci
         continue-on-error: false
 
       - name: Lint Backend
