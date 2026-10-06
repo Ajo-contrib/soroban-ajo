@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [master, main, develop]
   schedule:
     # Run nightly at 2am UTC
     - cron: '0 2 * * *'
@@ -63,6 +63,9 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && npm ci
 
+      - name: Test bundle budget checker
+        run: cd frontend && npm run test:bundle-budget
+
       - name: Build frontend
         run: cd frontend && npm run build
         env:
@@ -71,26 +74,7 @@ jobs:
         # continue-on-error: true # Recommended to fail if build fails
 
       - name: Check bundle sizes
-        run: |
-          echo "=== Bundle Size Report ==="
-          if [ -d "frontend/.next/static/chunks" ]; then
-            echo "JS Chunks:"
-            find frontend/.next/static/chunks -name "*.js" -exec du -sh {} \; | sort -rh | head -20
-            
-            TOTAL=$(find frontend/.next/static -name "*.js" -exec du -b {} \; | awk '{sum+=$1} END {print sum}')
-            BUDGET=524288  # 512 KB in bytes
-            echo ""
-            echo "Total JS size: $(echo $TOTAL | awk '{printf "%.1f KB", $1/1024}')"
-            echo "Budget: 512 KB"
-            
-            if [ "$TOTAL" -gt "$BUDGET" ]; then
-              echo "⚠️ Bundle size exceeds budget!"
-            else
-              echo "✅ Bundle size within budget"
-            fi
-          else
-            echo "No build artifacts found (build may have failed)"
-          fi
+        run: cd frontend && npm run check:bundle-budget
 
       - name: Upload bundle analysis
         if: always()
@@ -225,7 +209,7 @@ jobs:
             ### Performance Budgets
             | Metric | Budget |
             |--------|--------|
-            | Max Bundle Size | 512 KB |
+            | Max Bundle Size | 500 KiB |
             | Max API Response Time (p95) | 500ms |
             | Max Page Load Time | 3000ms |
             | Max Component Render Time | 16ms |

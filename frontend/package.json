@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "analyze": "ANALYZE=true next build",
+    "check:bundle-budget": "node scripts/check-bundle-budget.mjs",
+    "test:bundle-budget": "node --test scripts/check-bundle-budget.test.mjs",
     "start": "next start",
     "lint": "next lint",
     "lint:naming": "eslint --config .eslintrc.naming.js 'src/**/*.{ts,tsx}'",
