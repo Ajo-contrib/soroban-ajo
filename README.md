@@ -143,6 +143,7 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for full deployment instructions.
 
 - [Developer Onboarding](docs/DEVELOPER_ONBOARDING.md)
 - [Architecture Decision Records](docs/ARCHITECTURE_DECISION_RECORDS.md)
+- [Known Issues & Accepted Risks](docs/KNOWN_ISSUES_AND_ACCEPTED_RISKS.md)
 - [Smart Contract Documentation](docs/SMART_CONTRACT_DOCUMENTATION.md) / [Integration Guide](docs/SMART_CONTRACT_INTEGRATION.md)
 - [i18n Architecture](docs/I18N_ARCHITECTURE.md)
 - [User Guide](docs/USER_GUIDE.md) / [Tutorials](docs/USER_GUIDE_TUTORIALS.md)

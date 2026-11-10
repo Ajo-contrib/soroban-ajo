@@ -3,10 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "node init && next dev",
+    "build": "node init && next build",
     "analyze": "ANALYZE=true next build",
-    "start": "next start",
+    "start": "node init && next start",
     "lint": "next lint",
     "lint:naming": "eslint --config .eslintrc.naming.js 'src/**/*.{ts,tsx}'",
     "lint:a11y": "eslint --config .eslintrc.a11y.json 'src/**/*.{ts,tsx}'",
@@ -17,7 +17,7 @@
     "test:a11y": "node scripts/test-accessibility.js",
     "test:pwa": "npm run build && npm start",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "node init && storybook build"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.0.0",
